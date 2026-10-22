@@ -1,0 +1,25 @@
+{
+  "combos": [
+    {
+      "description": "同时装备【裂片短刃】与【铁木甲】时激活：你每回合打出的第一张【普通攻击】额外造成1点物理伤害。",
+      "id": "combo_blade_iron",
+      "name": "《利刃铁甲》",
+      "parts": [
+        "eq_sword",
+        "eq_armor"
+      ],
+      "passive": {
+        "conditions": {
+          "card_id": "basic_attack",
+          "damage_type": "physical",
+          "first_attack_this_turn": true
+        },
+        "effect": {
+          "type": "damage_bonus",
+          "value": 1.0
+        },
+        "hook": "on_outgoing_damage"
+      }
+    }
+  ]
+}

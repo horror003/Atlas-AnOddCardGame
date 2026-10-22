@@ -1,0 +1,12 @@
+# Godot 4 缓存与导入文件
+.godot/
+*.translation
+*.tmp
+
+# 临时探针与调试输出
+probe_*.gd
+probe_out.txt
+
+# 系统文件
+Thumbs.db
+.DS_Store

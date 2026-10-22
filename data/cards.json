@@ -1,0 +1,510 @@
+{
+  "cards": [
+	{
+	  "can_target_ally": true,
+	  "defense_value": 0,
+	  "description": "对目标造成3点\n物理伤害。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "damage_type": "physical",
+			  "target": "selected",
+			  "type": "deal_damage",
+			  "value": 3.0
+			}
+		  ],
+		  "trigger": "on_play"
+		}
+	  ],
+	  "id": "basic_attack",
+	  "is_defense": false,
+	  "name": "【普通攻击】",
+	  "subtype": "attack",
+	  "tags": [
+		"attack",
+        "basic"
+	  ],
+	  "target_type": "single_any",
+	  "type": "basic"
+	},
+	{
+	  "defense_value": 1.0,
+	  "description": "格挡1点伤害。\n出牌阶段点击=布置到预备区。",
+	  "effects": [],
+	  "id": "defend1",
+	  "is_defense": true,
+	  "name": "【防御1】",
+	  "subtype": "defense",
+	  "tags": [
+		"defense",
+        "basic"
+	  ],
+	  "target_type": "none",
+	  "type": "basic"
+	},
+	{
+	  "defense_value": 2.0,
+	  "description": "格挡2点伤害。\n出牌阶段点击=布置到预备区。",
+	  "effects": [],
+	  "id": "defend2",
+	  "is_defense": true,
+	  "name": "【防御2】",
+	  "subtype": "defense",
+	  "tags": [
+		"defense",
+        "basic"
+	  ],
+	  "target_type": "none",
+	  "type": "basic"
+	},
+	{
+	  "defense_value": 3.0,
+	  "description": "格挡3点伤害。\n出牌阶段点击=布置到预备区。",
+	  "effects": [],
+	  "id": "defend3",
+	  "is_defense": true,
+	  "name": "【防御3】",
+	  "subtype": "defense",
+	  "tags": [
+		"defense",
+        "basic"
+	  ],
+	  "target_type": "none",
+	  "type": "basic"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "令目标跳过其\n下一个完整回合。\n对已有［跳过］者使用=解除。",
+	  "effects": [],
+	  "id": "skip",
+	  "is_defense": false,
+	  "name": "【跳过】",
+	  "subtype": "control",
+	  "tags": [
+		"control",
+        "basic"
+	  ],
+	  "target_type": "single_enemy",
+	  "type": "basic"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "自己摸2张牌。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "target": "self",
+			  "type": "draw_cards",
+			  "value": 2.0
+			}
+		  ],
+		  "trigger": "on_play"
+		}
+	  ],
+	  "id": "draw",
+	  "is_defense": false,
+	  "name": "【抽牌】",
+	  "subtype": "support",
+	  "tags": [
+		"support",
+        "basic"
+	  ],
+	  "target_type": "self",
+	  "type": "basic"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "从特殊事件牌堆\n抽一张并执行。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "target": "self",
+			  "type": "trigger_event"
+			}
+		  ],
+		  "trigger": "on_play"
+		}
+	  ],
+	  "id": "special_event",
+	  "is_defense": false,
+	  "name": "【特殊事件】",
+	  "subtype": "event",
+	  "tags": [
+		"event",
+        "basic"
+	  ],
+	  "target_type": "none",
+	  "type": "basic"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "对目标造成2点法术伤害。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "damage_type": "magical",
+			  "target": "selected",
+			  "type": "deal_damage",
+			  "value": 2.0
+			}
+		  ],
+		  "trigger": "on_play"
+		}
+	  ],
+	  "id": "magic_bolt",
+	  "is_defense": false,
+	  "name": "【裂解】",
+	  "subtype": "attack",
+	  "tags": [
+		"attack",
+        "magical"
+	  ],
+	  "target_type": "single_enemy",
+	  "type": "special_attack"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "对目标造成2点灵魂伤害。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "damage_type": "soul",
+			  "target": "selected",
+			  "type": "deal_damage",
+			  "value": 2.0
+			}
+		  ],
+		  "trigger": "on_play"
+		}
+	  ],
+	  "id": "refresh",
+	  "is_defense": false,
+	  "name": "【净除】",
+	  "subtype": "attack",
+	  "tags": [
+		"attack",
+        "soul"
+	  ],
+	  "target_type": "single_enemy",
+	  "type": "special_attack"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "令目标失去2点生命。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "damage_type": "hp_loss",
+			  "target": "selected",
+			  "type": "deal_damage",
+			  "value": 2.0
+			}
+		  ],
+		  "trigger": "on_play"
+		}
+	  ],
+	  "id": "wither",
+	  "is_defense": false,
+	  "name": "【凋零】",
+	  "subtype": "attack",
+	  "tags": [
+        "attack"
+	  ],
+	  "target_type": "single_enemy",
+	  "type": "special_attack"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "使目标陷入2回合「燃烧」状态\n（回合开始时失去2点生命）。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "duration": 2.0,
+			  "status_id": "burn",
+			  "target": "selected",
+			  "type": "add_status"
+			}
+		  ],
+		  "trigger": "on_play"
+		}
+	  ],
+	  "id": "ignite",
+	  "is_defense": false,
+	  "name": "【点燃】",
+	  "subtype": "attack",
+	  "tags": [
+        "attack"
+	  ],
+	  "target_type": "single_enemy",
+	  "type": "special_attack"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "对目标造成2点物理\n+1点法术伤害\n（分次独立响应）。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "damage_type": "physical",
+			  "target": "selected",
+			  "type": "deal_damage",
+			  "value": 2.0
+			},
+			{
+			  "damage_type": "magical",
+			  "target": "selected",
+			  "type": "deal_damage",
+			  "value": 1.0
+			}
+		  ],
+		  "trigger": "on_play"
+		}
+	  ],
+	  "id": "twin_edge",
+	  "is_defense": false,
+	  "name": "【狂热】",
+	  "subtype": "attack",
+	  "tags": [
+        "attack"
+	  ],
+	  "target_type": "single_enemy",
+	  "type": "special_attack"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "回复5点生命。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "target": "selected",
+			  "type": "heal",
+			  "value": 5.0
+			}
+		  ],
+		  "trigger": "on_play"
+		}
+	  ],
+	  "id": "branded_chocolate",
+	  "is_defense": false,
+	  "name": "【名牌巧克力】",
+	  "subtype": "food",
+	  "tags": [
+        "food"
+	  ],
+	  "target_type": "self_or_dying",
+	  "type": "food"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "回复3点生命。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "target": "selected",
+			  "type": "heal",
+			  "value": 3.0
+			}
+		  ],
+		  "trigger": "on_play"
+		}
+	  ],
+	  "id": "food_potion1",
+	  "is_defense": false,
+	  "name": "【急救药剂】",
+	  "subtype": "food",
+	  "tags": [
+        "food"
+	  ],
+	  "target_type": "self_or_dying",
+	  "type": "food"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "武器。你造成的\n物理伤害+1。",
+	  "effects": [],
+	  "id": "eq_sword",
+	  "is_defense": false,
+	  "name": "【裂片短刃】",
+	  "passive": {
+		"conditions": {
+		  "damage_type": "physical"
+		},
+		"effect": {
+		  "type": "damage_bonus",
+		  "value": 1.0
+		},
+		"hook": "on_outgoing_damage"
+	  },
+	  "subtype": "weapon",
+	  "tags": [
+		"equipment",
+        "weapon"
+	  ],
+	  "target_type": "none",
+	  "type": "equipment"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "防具。你受到的\n物理伤害-1。",
+	  "effects": [],
+	  "id": "eq_armor",
+	  "is_defense": false,
+	  "name": "【铁木甲】",
+	  "passive": {
+		"conditions": {
+		  "damage_type": "physical"
+		},
+		"effect": {
+		  "type": "damage_bonus",
+		  "value": -1.0
+		},
+		"hook": "on_incoming_damage"
+	  },
+	  "subtype": "armor",
+	  "tags": [
+		"equipment",
+        "armor"
+	  ],
+	  "target_type": "none",
+	  "type": "equipment"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "进入目标预备区。\n其判定阶段排中判定：\n失败则失去2点生命。",
+	  "effects": [],
+	  "id": "dj_curse",
+	  "is_defense": false,
+	  "judge": {
+		"fail_actions": [
+		  {
+			"damage_type": "hp_loss",
+			"target": "selected",
+			"type": "deal_damage",
+			"value": 2.0
+		  }
+		],
+		"method": "coin",
+		"success_actions": []
+	  },
+	  "name": "【迟滞诅咒】",
+	  "subtype": "judge",
+	  "tags": [
+        "judge"
+	  ],
+	  "target_type": "single_enemy",
+	  "type": "delayed_judge"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "进入目标预备区。\n其判定阶段摸牌判定：\n若为基础牌则受2点物理伤害。",
+	  "effects": [],
+	  "id": "dj_weak",
+	  "is_defense": false,
+	  "judge": {
+		"condition": "is_basic",
+		"fail_actions": [],
+		"method": "draw",
+		"success_actions": [
+		  {
+			"damage_type": "physical",
+			"target": "selected",
+			"type": "deal_damage",
+			"value": 2.0
+		  }
+		]
+	  },
+	  "name": "【虚弱印记】",
+	  "subtype": "judge",
+	  "tags": [
+        "judge"
+	  ],
+	  "target_type": "single_enemy",
+	  "type": "delayed_judge"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "布置到陷阱区。\n当对手打出攻击牌时，\n对其造成2点物理伤害。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "damage_type": "physical",
+			  "target": "selected",
+			  "type": "deal_damage",
+			  "value": 2.0
+			}
+		  ],
+		  "trigger": "on_trap"
+		}
+	  ],
+	  "id": "trap_ambush",
+	  "is_defense": false,
+	  "name": "【伏击】",
+	  "subtype": "trap",
+	  "tags": [
+        "trap"
+	  ],
+	  "target_type": "none",
+	  "trap_trigger": {
+		"card_tag": "attack",
+		"event": "play_card"
+	  },
+	  "type": "trap"
+	},
+	{
+	  "defense_value": 0.0,
+	  "description": "武器。你的单一回合内，你每打出过一张【普通攻击】，\n你接下来的【普通攻击】伤害就+1，至多叠加3层",
+	  "effects": [],
+	  "id": "eq_kerberos",
+	  "is_defense": false,
+	  "name": "【刻耳柏洛斯的怨恨】",
+	  "passive": {
+		"conditions": {
+		  "card_id": "basic_attack",
+		  "damage_type": "physical"
+		},
+		"effect": {
+		  "max": 3.0,
+		  "type": "damage_bonus",
+		  "value": "per_attack_used_this_turn"
+		},
+		"hook": "on_outgoing_damage"
+	  },
+	  "subtype": "weapon",
+	  "tags": [],
+	  "target_type": "none",
+	  "type": "equipment"
+	}
+  ],
+  "deck_composition": {
+	"basic_attack": 15,
+	"branded_chocolate": 3.0,
+	"defend1": 7.0,
+	"defend2": 5.0,
+	"defend3": 3.0,
+	"dj_curse": 2.0,
+	"dj_weak": 2.0,
+	"draw": 4.0,
+	"eq_armor": 1.0,
+	"eq_kerberos": 1.0,
+	"eq_sword": 2.0,
+	"food_potion1": 2.0,
+	"ignite": 2.0,
+	"magic_bolt": 3.0,
+	"refresh": 2.0,
+	"skip": 3.0,
+	"special_event": 4.0,
+	"trap_ambush": 2.0,
+	"twin_edge": 2.0,
+	"wither": 2.0
+  }
+}

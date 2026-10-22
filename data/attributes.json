@@ -1,0 +1,62 @@
+{
+  "attributes": [
+    {
+      "description": "派系一属性：时间。具体效果待补充。",
+      "faction": "faction_a",
+      "id": "time",
+      "name": "〈时间〉"
+    },
+    {
+      "description": "派系一属性：生命。具体效果待补充。",
+      "faction": "faction_a",
+      "id": "life",
+      "name": "〈生命〉"
+    },
+    {
+      "description": "派系一属性：臆想。具体效果待补充。",
+      "faction": "faction_a",
+      "id": "delusion",
+      "name": "〈臆想〉"
+    },
+    {
+      "description": "派系一属性：粒子。具体效果待补充。",
+      "faction": "faction_a",
+      "id": "particle",
+      "name": "〈粒子〉"
+    },
+    {
+      "description": "派系二属性：空间。具体效果待补充。",
+      "faction": "faction_b",
+      "id": "space",
+      "name": "〈空间〉"
+    },
+    {
+      "description": "派系二属性：冥暗。具体效果待补充。",
+      "faction": "faction_b",
+      "id": "gloom",
+      "name": "〈冥暗〉"
+    },
+    {
+      "description": "派系二属性：混沌。具体效果待补充。",
+      "faction": "faction_b",
+      "id": "chaos",
+      "name": "〈混沌〉"
+    },
+    {
+      "description": "派系二属性：信息。具体效果待补充。",
+      "faction": "faction_b",
+      "id": "info",
+      "name": "〈信息〉"
+    }
+  ],
+  "factions": [
+    {
+      "id": "faction_a",
+      "name": "派系一（时间·生命·臆想·粒子）"
+    },
+    {
+      "id": "faction_b",
+      "name": "派系二（空间·冥暗·混沌·信息）"
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "event_deck": [
+	"event_draw_all",
+	"event_heal_2",
+	"event_random_discard",
+	"event_dice_fate",
+    "event_thunder"
+  ],
+  "events": [
+	{
+	  "description": "全体摸1张牌。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "type": "draw_all",
+			  "value": 1.0
+			}
+		  ],
+		  "trigger": "on_resolve"
+		}
+	  ],
+	  "id": "event_draw_all",
+	  "name": "『全员补给』",
+	  "target_type": "none"
+	},
+	{
+	  "description": "令场上所有玩家\n失去5点生命。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "damage_type": "hp_loss",
+			  "target": "selected",
+			  "type": "deal_damage",
+			  "value": 5.0
+			}
+		  ],
+		  "trigger": "on_resolve"
+		}
+	  ],
+	  "id": "event_thunder",
+	  "name": "『天罚』",
+	  "target_type": "all_players"
+	},
+	{
+	  "description": "自己回复2点生命\n（不超过上限）。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "target": "self",
+			  "type": "heal",
+			  "value": 2.0
+			}
+		  ],
+		  "trigger": "on_resolve"
+		}
+	  ],
+	  "id": "event_heal_2",
+	  "name": "『一息尚存』",
+	  "target_type": "self"
+	},
+	{
+	  "description": "随机弃置目标\n3张手牌。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "target": "selected",
+			  "type": "random_discard",
+			  "value": 3.0
+			}
+		  ],
+		  "trigger": "on_resolve"
+		}
+	  ],
+	  "id": "event_random_discard",
+	  "name": "『趁火打劫』",
+	  "target_type": "single_enemy"
+	},
+	{
+	  "description": "骰子判定：1-2 失去2点生命；\n3-6 摸2张牌。",
+	  "effects": [],
+	  "id": "event_dice_fate",
+	  "judge": {
+		"fail_actions": [
+		  {
+			"damage_type": "hp_loss",
+			"target": "self",
+			"type": "deal_damage",
+			"value": 2.0
+		  }
+		],
+		"method": "dice",
+		"success_actions": [
+		  {
+			"target": "self",
+			"type": "draw_cards",
+			"value": 2.0
+		  }
+		],
+		"success_values": [
+		  3.0,
+		  4.0,
+		  5.0,
+		  6.0
+		]
+	  },
+	  "name": "『命运骰』",
+	  "target_type": "none"
+	}
+  ]
+}

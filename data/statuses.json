@@ -1,0 +1,94 @@
+{
+  "statuses": [
+    {
+      "description": "接下来两个回合开始时失去2点生命。",
+      "duration": 2.0,
+      "effects": [
+        {
+          "type": "lose_hp",
+          "value": 2.0
+        }
+      ],
+      "id": "burn",
+      "name": "「燃烧」",
+      "trigger": "on_turn_start"
+    },
+    {
+      "description": "跳过该玩家的下一个完整回合，跳过后自动解除。对已有「跳过」的目标再次使用则解除。",
+      "duration": -1.0,
+      "effects": [],
+      "id": "skip",
+      "name": "「跳过」",
+      "trigger": "on_turn_start"
+    },
+    {
+      "description": "受到一次伤害时，失去1点生命，然后减少一层。（未声明持续时间：永久，层数耗尽后移除）",
+      "duration": -1.0,
+      "effects": [
+        {
+          "type": "lose_hp",
+          "value": 1.0
+        }
+      ],
+      "id": "vulnerable_1",
+      "max_layers": 9.0,
+      "name": "「易伤1」",
+      "trigger": "on_damage_taken"
+    },
+    {
+      "description": "打出手牌时，失去1点生命，然后减少一层。（未声明持续时间：永久，层数耗尽后移除）",
+      "duration": -1.0,
+      "effects": [
+        {
+          "type": "lose_hp",
+          "value": 1.0
+        }
+      ],
+      "id": "worsen_1",
+      "max_layers": 9.0,
+      "name": "「恶化1」",
+      "trigger": "on_play_card"
+    },
+    {
+      "description": "造成伤害时，本次造成的伤害降低1点，然后减少一层。（未声明持续时间：永久，层数耗尽后移除）",
+      "duration": -1.0,
+      "effects": [
+        {
+          "type": "damage_bonus",
+          "value": -1.0
+        }
+      ],
+      "id": "cold_1",
+      "max_layers": 9.0,
+      "name": "「寒冷1」",
+      "trigger": "on_deal_damage"
+    },
+    {
+      "description": "其他玩家对你造成伤害时获得一层，每名玩家最多2层。",
+      "duration": -1.0,
+      "effects": [],
+      "id": "crimson",
+      "max_layers": 2.0,
+      "name": "「猩红」",
+      "trigger": "none"
+    },
+    {
+      "description": "你对其他玩家造成伤害时，其获得一层，每名玩家最多2层。",
+      "duration": -1.0,
+      "effects": [],
+      "id": "pale",
+      "max_layers": 2.0,
+      "name": "「皎白」",
+      "trigger": "none"
+    },
+    {
+      "description": "你伤害其他玩家时获得一层，每名玩家最多2层。",
+      "duration": -1.0,
+      "effects": [],
+      "id": "dark",
+      "max_layers": 2.0,
+      "name": "「玄暗」",
+      "trigger": "none"
+    }
+  ]
+}

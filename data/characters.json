@@ -1,0 +1,210 @@
+{
+  "characters": [
+	{
+	  "attribute_ids": [
+		"delusion",
+        "info"
+	  ],
+	  "draw_limit": 5,
+	  "hand_limit": 3,
+	  "id": "char_aila",
+	  "max_hp": 20,
+	  "name": "艾拉",
+	  "skill_ids": [
+        "skill_fenji"
+	  ]
+	},
+	{
+	  "attribute_ids": [
+		"life",
+        "space"
+	  ],
+	  "draw_limit": 5.0,
+	  "hand_limit": 3.0,
+	  "id": "char_buluo",
+	  "max_hp": 20.0,
+	  "name": "布洛",
+	  "skill_ids": [
+        "skill_jianbi"
+	  ]
+	},
+	{
+	  "attribute_ids": [
+		"particle",
+        "chaos"
+	  ],
+	  "draw_limit": 5.0,
+	  "hand_limit": 3.0,
+	  "id": "char_cuike",
+	  "max_hp": 18.0,
+	  "name": "崔克",
+	  "skill_ids": [
+        "skill_soul_nail"
+	  ]
+	},
+	{
+	  "attribute_ids": [
+		"life",
+        "gloom"
+	  ],
+	  "draw_limit": 5.0,
+	  "hand_limit": 3.0,
+	  "id": "char_weila",
+	  "max_hp": 20.0,
+	  "name": "薇拉",
+	  "skill_ids": [
+		"skill_dawn",
+        "skill_soul_nail"
+	  ]
+	},
+	{
+	  "attribute_ids": [
+		"time",
+        "chaos"
+	  ],
+	  "draw_limit": 5.0,
+	  "hand_limit": 3.0,
+	  "id": "char_wuling",
+	  "max_hp": 20.0,
+	  "name": "伍灵",
+	  "skill_ids": [
+        "skill_perceive"
+	  ]
+	},
+	{
+	  "attribute_ids": [
+		"time",
+        "space"
+	  ],
+	  "draw_limit": 5.0,
+	  "hand_limit": 3.0,
+	  "id": "char_areia",
+	  "max_hp": 20.0,
+	  "name": "阿瑞亚",
+	  "skill_ids": [
+		"skill_deception",
+        "skill_exile"
+	  ]
+	},
+	{
+	  "attribute_ids": [
+		"time",
+        "info"
+	  ],
+	  "draw_limit": 5.0,
+	  "hand_limit": 3.0,
+	  "id": "char_limo",
+	  "max_hp": 20.0,
+	  "name": "里莫",
+	  "skill_ids": [
+		"skill_thousand_weight",
+        "skill_fractal"
+	  ]
+	},
+	{
+	  "attribute_ids": [
+		"life",
+        "gloom"
+	  ],
+	  "draw_limit": 5.0,
+	  "hand_limit": 3.0,
+	  "id": "char_ferrano",
+	  "max_hp": 20.0,
+	  "name": "费拉诺",
+	  "skill_ids": [
+        "skill_sage_book"
+	  ]
+	},
+	{
+	  "attribute_ids": [
+		"life",
+        "chaos"
+	  ],
+	  "draw_limit": 5.0,
+	  "hand_limit": 3.0,
+	  "id": "char_shijia",
+	  "max_hp": 20.0,
+	  "name": "蚀痂",
+	  "skill_ids": [
+		"skill_bloodline",
+        "skill_scab"
+	  ]
+	},
+	{
+	  "attribute_ids": [
+		"delusion",
+        "space"
+	  ],
+	  "draw_limit": 5.0,
+	  "hand_limit": 3.0,
+	  "id": "char_igarita",
+	  "max_hp": 20.0,
+	  "name": "伊加尔塔",
+	  "skill_ids": [
+		"skill_ark_sword",
+        "skill_guardian"
+	  ]
+	},
+	{
+	  "attribute_ids": [
+		"delusion",
+        "gloom"
+	  ],
+	  "draw_limit": 5.0,
+	  "hand_limit": 3.0,
+	  "id": "char_nerufu",
+	  "max_hp": 20.0,
+	  "name": "涅鲁弗",
+	  "skill_ids": [
+		"skill_trichroma",
+        "skill_mutual"
+	  ]
+	},
+	{
+	  "attribute_ids": [
+		"delusion",
+        "info"
+	  ],
+	  "draw_limit": 5.0,
+	  "hand_limit": 3.0,
+	  "id": "char_justin",
+	  "max_hp": 24.0,
+	  "name": "贾斯汀",
+	  "skill_ids": [
+		"skill_hope",
+		"skill_regen",
+        "skill_false_step"
+	  ]
+	},
+	{
+	  "attribute_ids": [
+		"particle",
+        "gloom"
+	  ],
+	  "draw_limit": 5.0,
+	  "hand_limit": 3.0,
+	  "id": "char_xuwu",
+	  "max_hp": 20.0,
+	  "name": "序巫",
+	  "skill_ids": [
+		"skill_plague_doctor",
+        "skill_leap_faith"
+	  ]
+	},
+	{
+	  "attribute_ids": [
+		"particle",
+        "gloom"
+	  ],
+	  "draw_limit": 5,
+	  "hand_limit": 3,
+	  "id": "char_mowang",
+	  "max_hp": 20,
+	  "name": "“魔王”",
+	  "skill_ids": [
+		"skill_caged_beast",
+        "skill_rhythm"
+	  ]
+	}
+  ]
+}
