@@ -56,7 +56,7 @@ static func damage_type_color(dt: String) -> Color:
 		"physical": return Color(0.82, 0.36, 0.33)   # 物理：红
 		"magical": return Color(0.38, 0.60, 0.88)    # 法术：蓝
 		"soul": return Color(0.64, 0.45, 0.87)       # 灵魂：紫
-		"life_loss": return Color(0.62, 0.62, 0.64)  # 生命流失：灰
+		"hp_loss": return Color(0.62, 0.62, 0.64)    # 生命流失：灰
 	return Color(0.55, 0.60, 0.68)
 
 static func card_color(card: Dictionary) -> Color:

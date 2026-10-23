@@ -2,11 +2,11 @@
   "statuses": [
     {
       "description": "接下来两个回合开始时失去2点生命。",
-      "duration": 2.0,
+      "duration": 2,
       "effects": [
         {
           "type": "lose_hp",
-          "value": 2.0
+          "value": 2
         }
       ],
       "id": "burn",
@@ -15,7 +15,7 @@
     },
     {
       "description": "跳过该玩家的下一个完整回合，跳过后自动解除。对已有「跳过」的目标再次使用则解除。",
-      "duration": -1.0,
+      "duration": -1,
       "effects": [],
       "id": "skip",
       "name": "「跳过」",
@@ -23,72 +23,107 @@
     },
     {
       "description": "受到一次伤害时，失去1点生命，然后减少一层。（未声明持续时间：永久，层数耗尽后移除）",
-      "duration": -1.0,
+      "duration": -1,
       "effects": [
         {
           "type": "lose_hp",
-          "value": 1.0
+          "value": 1
         }
       ],
       "id": "vulnerable_1",
-      "max_layers": 9.0,
+      "max_layers": 9,
       "name": "「易伤1」",
       "trigger": "on_damage_taken"
     },
     {
       "description": "打出手牌时，失去1点生命，然后减少一层。（未声明持续时间：永久，层数耗尽后移除）",
-      "duration": -1.0,
+      "duration": -1,
       "effects": [
         {
           "type": "lose_hp",
-          "value": 1.0
+          "value": 1
         }
       ],
       "id": "worsen_1",
-      "max_layers": 9.0,
+      "max_layers": 9,
       "name": "「恶化1」",
       "trigger": "on_play_card"
     },
     {
       "description": "造成伤害时，本次造成的伤害降低1点，然后减少一层。（未声明持续时间：永久，层数耗尽后移除）",
-      "duration": -1.0,
+      "duration": -1,
       "effects": [
         {
           "type": "damage_bonus",
-          "value": -1.0
+          "value": -1
         }
       ],
       "id": "cold_1",
-      "max_layers": 9.0,
+      "max_layers": 9,
       "name": "「寒冷1」",
       "trigger": "on_deal_damage"
     },
     {
       "description": "其他玩家对你造成伤害时获得一层，每名玩家最多2层。",
-      "duration": -1.0,
+      "duration": -1,
       "effects": [],
       "id": "crimson",
-      "max_layers": 2.0,
+      "max_layers": 2,
       "name": "「猩红」",
       "trigger": "none"
     },
     {
       "description": "你对其他玩家造成伤害时，其获得一层，每名玩家最多2层。",
-      "duration": -1.0,
+      "duration": -1,
       "effects": [],
       "id": "pale",
-      "max_layers": 2.0,
+      "max_layers": 2,
       "name": "「皎白」",
       "trigger": "none"
     },
     {
       "description": "你伤害其他玩家时获得一层，每名玩家最多2层。",
-      "duration": -1.0,
+      "duration": -1,
       "effects": [],
       "id": "dark",
-      "max_layers": 2.0,
+      "max_layers": 2,
       "name": "「玄暗」",
       "trigger": "none"
+    },
+    {
+      "description": "你使用的下一张【普通攻击】伤害+1，触发后移除。",
+      "duration": -1,
+      "effects": [],
+      "id": "attack_up_1",
+      "max_layers": 1,
+      "name": "「奋击·攻击+1」",
+      "trigger": "none"
+    },
+    {
+      "description": "被标记期间，其他玩家对你造成的【尖端放电】灵魂伤害自动生效。持续 2 回合。",
+      "duration": 2,
+      "effects": [],
+      "id": "electrified",
+      "name": "「触电」",
+      "trigger": "none"
+    },
+    {
+      "description": "造成伤害时，本次造成的伤害 -100%。触发后移除一层。（未声明持续时间：永久，层数耗尽后移除）",
+      "duration": -1,
+      "effects": [],
+      "id": "blind",
+      "max_layers": 9,
+      "name": "「失明」",
+      "trigger": "on_deal_damage"
+    },
+    {
+      "description": "你造成的伤害降低 1 点。至多叠加 3 层。出牌阶段结束时，清空自身所有「止戈」标记。（未声明持续时间：永久，层数耗尽后移除）",
+      "duration": -1,
+      "effects": [],
+      "id": "stop_sword",
+      "max_layers": 3,
+      "name": "「止戈」",
+      "trigger": "on_play_end"
     }
   ]
 }

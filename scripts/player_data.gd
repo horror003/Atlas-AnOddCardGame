@@ -32,6 +32,8 @@ var limited_used: Dictionary = {}      # 限定技 id -> 是否已使用
 var caged_beast_used: bool = false     # 本回合是否已触发〖困兽〗
 var rhythm_used: bool = false          # 本回合出牌阶段是否已触发〖韵动〗
 var guardian_seen_seq: int = -1        # 〖守御〗已触发过的卡牌实例序号
+var oscillation_mode: int = 0          # 〖振荡〗当前形态 0=①弃2视作跳过 / 1=②摸2自加跳过
+var star_brilliance_awakened: bool = false  # 〖星辉〗是否已觉醒（解锁沙葬）
 
 func has_status(id: String) -> bool:
 	return statuses.has(id)

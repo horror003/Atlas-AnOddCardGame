@@ -1,95 +1,10 @@
 {
   "skills": [
     {
-      "description": "本回合你使用的下一张【普通攻击】伤害+1。",
-      "effects": [
-        {
-          "actions": [
-            {
-              "duration": "this_turn",
-              "status_id": "attack_up_1",
-              "target": "self",
-              "type": "add_status"
-            }
-          ],
-          "trigger": "on_use"
-        }
-      ],
-      "id": "skill_fenji",
-      "max_uses_per_turn": 1.0,
-      "name": "〖奋击〗",
-      "skill_type": "active",
-      "target_type": "none"
-    },
-    {
-      "description": "从弃牌堆中选择一张【防御1】或【防御2】加入手牌（没有则无效）。",
-      "effects": [
-        {
-          "actions": [
-            {
-              "defense_ids": [
-                "defend1",
-                "defend2"
-              ],
-              "target": "self",
-              "type": "retrieve_defense"
-            }
-          ],
-          "trigger": "on_use"
-        }
-      ],
-      "id": "skill_jianbi",
-      "max_uses_per_turn": 1.0,
-      "name": "〖坚壁〗",
-      "skill_type": "active",
-      "target_type": "none"
-    },
-    {
-      "description": "对目标造成1点灵魂伤害。",
-      "effects": [
-        {
-          "actions": [
-            {
-              "damage_type": "soul",
-              "target": "selected",
-              "type": "deal_damage",
-              "value": 1.0
-            }
-          ],
-          "trigger": "on_use"
-        }
-      ],
-      "id": "skill_soul_nail",
-      "max_uses_per_turn": 1.0,
-      "name": "〖魂钉〗",
-      "skill_type": "active",
-      "target_type": "single_enemy"
-    },
-    {
-      "description": "开场技能：游戏开始时摸1张牌。",
-      "effects": [
-        {
-          "actions": [
-            {
-              "target": "self",
-              "type": "draw_cards",
-              "value": 1.0
-            }
-          ],
-          "trigger": "on_game_start"
-        }
-      ],
-      "id": "skill_dawn",
-      "max_uses_per_turn": 0.0,
-      "name": "〖晨光〗",
-      "skill_type": "opening",
-      "target_type": "none"
-    },
-    {
       "description": "锁定技。你所有的摸牌行为需执行：先摸2x张牌，然后弃掉x张牌。（x为你在本次摸牌行为中需要摸牌的数量）",
       "effects": [],
       "id": "skill_perceive",
-      "max_uses_per_turn": 0.0,
+      "max_uses_per_turn": 0,
       "name": "〖洞悉〗",
       "skill_type": "locked",
       "target_type": "none"
@@ -98,7 +13,7 @@
       "description": "锁定技。你的存牌数值提升至4，摸牌数值提升至6。",
       "effects": [],
       "id": "skill_deception",
-      "max_uses_per_turn": 0.0,
+      "max_uses_per_turn": 0,
       "name": "〖骗局〗",
       "skill_type": "locked",
       "target_type": "none"
@@ -107,7 +22,7 @@
       "description": "限定技。当你宣布死亡时，你可以选择一名其他玩家，强制清空其手牌、装备区、陷阱区与预备区的所有牌，视作丢弃。每局仅一次。",
       "effects": [],
       "id": "skill_exile",
-      "max_uses_per_turn": 0.0,
+      "max_uses_per_turn": 0,
       "name": "〖放逐〗",
       "skill_type": "limited",
       "target_type": "single_enemy"
@@ -116,7 +31,7 @@
       "description": "锁定技。你的【普通攻击】附带一次你预备区中防御牌点数总和×30%（向下取整）的灵魂伤害。",
       "effects": [],
       "id": "skill_thousand_weight",
-      "max_uses_per_turn": 0.0,
+      "max_uses_per_turn": 0,
       "name": "〖千钧之数〗",
       "skill_type": "locked",
       "target_type": "none"
@@ -125,16 +40,16 @@
       "description": "出牌阶段限1次。你可以将一张【普通攻击】视作【防御2】布置到你的预备区中。",
       "effects": [],
       "id": "skill_fractal",
-      "max_uses_per_turn": 1.0,
+      "max_uses_per_turn": 1,
       "name": "〖分形几何〗",
       "skill_type": "active",
       "target_type": "none"
     },
     {
-      "description": "转换技。出牌阶段限1次。丢弃你区域中的一张牌并选择一名其他玩家，对其施加2层当前形态的：①「易伤1」②「恶化1」③「寒冷1」（永久持续，层数触发后移除）。发动后按①→②→③→①轮换。",
+      "description": "转换技。出牌阶段限1次。丢弃你区域中的一张牌并选择一名其他玩家，对其施加2层当前形态的：①「易伤1」②「恶化1」③「寒冷1」（永久持续，层数触发后移除）。发动后按①→②→③→①轮换。\n「易伤1」：受到伤害时失去1点生命，然后减少一层。\n「恶化1」：打出手牌时失去1点生命，然后减少一层。\n「寒冷1」：造成伤害时本次伤害降低1点，然后减少一层。",
       "effects": [],
       "id": "skill_sage_book",
-      "max_uses_per_turn": 1.0,
+      "max_uses_per_turn": 1,
       "name": "〖贤者之书〗",
       "skill_type": "switch",
       "target_type": "single_enemy"
@@ -143,16 +58,16 @@
       "description": "锁定技。你使用【普通攻击】时失去10%（向上取整）当前生命值，然后回复3点生命。",
       "effects": [],
       "id": "skill_bloodline",
-      "max_uses_per_turn": 0.0,
+      "max_uses_per_turn": 0,
       "name": "〖血裔〗",
       "skill_type": "locked",
       "target_type": "none"
     },
     {
-      "description": "锁定技。你在你的回合外受到伤害时，将其中40%（向上取整）记录为「痂」。你的回合开始时，回复与「痂」记录值相等的生命并清空记录。",
+      "description": "锁定技。你在你的回合外受到伤害时，将其中40%（向上取整）记录为「痂」。你的回合开始时，回复与「痂」记录值相等的生命并清空记录。\n「痂」：记录值，用于回合开始时回复生命。",
       "effects": [],
       "id": "skill_scab",
-      "max_uses_per_turn": 0.0,
+      "max_uses_per_turn": 0,
       "name": "〖结痂〗",
       "skill_type": "locked",
       "target_type": "none"
@@ -161,7 +76,7 @@
       "description": "锁定技。你的【普通攻击】默认造成4点物理伤害。",
       "effects": [],
       "id": "skill_ark_sword",
-      "max_uses_per_turn": 0.0,
+      "max_uses_per_turn": 0,
       "name": "〖方舟之剑〗",
       "skill_type": "locked",
       "target_type": "none"
@@ -170,16 +85,16 @@
       "description": "锁定技。你受到特殊攻击造成的伤害时，进行一次摸牌判定：若判定牌不为基础牌，则对伤害来源造成2点物理伤害。单张卡牌只触发一次。",
       "effects": [],
       "id": "skill_guardian",
-      "max_uses_per_turn": 0.0,
+      "max_uses_per_turn": 0,
       "name": "〖守御〗",
       "skill_type": "locked",
       "target_type": "none"
     },
     {
-      "description": "锁定技。其他玩家对你造成伤害时，你获得一层「猩红」，来源获得一层「皎白」；你伤害其他玩家时，你获得一层「玄暗」。每名玩家每种颜色最多2层。",
+      "description": "锁定技。其他玩家对你造成伤害时，你获得一层「猩红」，来源获得一层「皎白」；你伤害其他玩家时，你获得一层「玄暗」。每名玩家每种颜色最多2层。\n「猩红」：对其他玩家造成伤害时获得。\n「皎白」：你对其他玩家造成伤害时，其获得。\n「玄暗」：你伤害其他玩家时获得。",
       "effects": [],
       "id": "skill_trichroma",
-      "max_uses_per_turn": 0.0,
+      "max_uses_per_turn": 0,
       "name": "〖三色无缘〗",
       "skill_type": "locked",
       "target_type": "none"
@@ -188,7 +103,7 @@
       "description": "出牌阶段限1次。当你携带「玄暗」且场上有其他玩家携带「皎白」时，移除自身至多2层「玄暗」，对一名带「皎白」的玩家造成2X点灵魂伤害并移除其X层「皎白」。若你还携带「猩红」，同时移除全部「猩红」，追加Y点灵魂伤害。",
       "effects": [],
       "id": "skill_mutual",
-      "max_uses_per_turn": 1.0,
+      "max_uses_per_turn": 1,
       "name": "〖相生相灭〗",
       "skill_type": "active",
       "target_type": "single_enemy"
@@ -201,19 +116,19 @@
             {
               "target": "self",
               "type": "lose_hp",
-              "value": 8.0
+              "value": 8
             },
             {
               "target": "self",
               "type": "draw_cards",
-              "value": 2.0
+              "value": 2
             }
           ],
           "trigger": "on_game_start"
         }
       ],
       "id": "skill_hope",
-      "max_uses_per_turn": 0.0,
+      "max_uses_per_turn": 0,
       "name": "〖希冀〗",
       "skill_type": "opening",
       "target_type": "none"
@@ -222,7 +137,7 @@
       "description": "锁定技。你的回合开始时回复2点生命；当你的生命值小于等于7时，改为回复4点。",
       "effects": [],
       "id": "skill_regen",
-      "max_uses_per_turn": 0.0,
+      "max_uses_per_turn": 0,
       "name": "〖再生〗",
       "skill_type": "locked",
       "target_type": "none"
@@ -235,19 +150,19 @@
             {
               "target": "self",
               "type": "lose_hp",
-              "value": 4.0
+              "value": 4
             },
             {
               "target": "selected",
               "type": "heal",
-              "value": 3.0
+              "value": 3
             }
           ],
           "trigger": "on_use"
         }
       ],
       "id": "skill_false_step",
-      "max_uses_per_turn": 1.0,
+      "max_uses_per_turn": 1,
       "name": "〖失足之幸〗",
       "skill_type": "active",
       "target_type": "single_enemy"
@@ -256,7 +171,7 @@
       "description": "锁定技。当场上存在生命值高于你的其他玩家时，你的存牌数值提升至4，摸牌数值提升至6。",
       "effects": [],
       "id": "skill_plague_doctor",
-      "max_uses_per_turn": 0.0,
+      "max_uses_per_turn": 0,
       "name": "〖疫医〗",
       "skill_type": "locked",
       "target_type": "none"
@@ -265,7 +180,7 @@
       "description": "出牌阶段限1次。你可以摸1至3张牌，然后失去2X点生命值（X为你本次摸牌的数量）。",
       "effects": [],
       "id": "skill_leap_faith",
-      "max_uses_per_turn": 1.0,
+      "max_uses_per_turn": 1,
       "name": "〖信仰之跃〗",
       "skill_type": "active",
       "target_type": "none"
@@ -274,7 +189,7 @@
       "description": "锁定技。每个玩家的回合内，你受到的第一张【普通攻击】伤害的默认值改为1点物理伤害，不影响后续加成；仍可被【防御】抵消。",
       "effects": [],
       "id": "skill_caged_beast",
-      "max_uses_per_turn": 0.0,
+      "max_uses_per_turn": 0,
       "name": "〖困兽〗",
       "skill_type": "locked",
       "target_type": "none"
@@ -283,10 +198,118 @@
       "description": "锁定技。你每个出牌阶段内使用的第一张伤害类型的牌，其造成的每段伤害提升100%。",
       "effects": [],
       "id": "skill_rhythm",
-      "max_uses_per_turn": 0.0,
+      "max_uses_per_turn": 0,
       "name": "〖韵动〗",
       "skill_type": "locked",
       "target_type": "none"
+    },
+    {
+      "description": "锁定技。出牌阶段开始时，将一张【电击1】加入手牌。",
+      "effects": [],
+      "id": "skill_voltage",
+      "max_uses_per_turn": 0,
+      "name": "〖大气电压〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "出牌阶段限一次。你可以弃掉一张手牌，然后对场上所有带有「触电」标记的玩家造成 2 点灵魂伤害。\n「触电」：被标记期间成为〖尖端放电〗的目标，持续 2 回合。",
+      "effects": [],
+      "id": "skill_tip_discharge",
+      "max_uses_per_turn": 1,
+      "name": "〖尖端放电〗",
+      "skill_type": "active",
+      "target_type": "none"
+    },
+    {
+      "description": "限定技。将一张【富兰克林之钥】加入手牌。",
+      "effects": [],
+      "id": "skill_lightning_rod",
+      "max_uses_per_turn": 0,
+      "name": "〖引雷〗",
+      "skill_type": "limited",
+      "target_type": "none"
+    },
+    {
+      "description": "锁定技。你的【普通攻击】默认造成 2 次 2 点物理伤害。",
+      "effects": [],
+      "id": "skill_sand_wind",
+      "max_uses_per_turn": 0,
+      "name": "〖扬沙〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "觉醒技。当你的生命值≤6时，你降低 6 点生命上限并回复 6 点生命。然后，你获得技能〖沙葬〗。",
+      "effects": [],
+      "id": "skill_star_brilliance",
+      "max_uses_per_turn": 0,
+      "name": "〖星辉〗",
+      "skill_type": "awakening",
+      "target_type": "none"
+    },
+    {
+      "description": "需觉醒〖星辉〗后解锁。每回合限一次。你可以弃掉你区域中的两张牌来进行一次掷骰判定，然后对场上所有玩家造成判定结果点数/2（向上取整）点物理伤害。你受到此伤害降低 50%。",
+      "effects": [],
+      "id": "skill_sand_burial",
+      "max_uses_per_turn": 1,
+      "name": "〖沙葬〗",
+      "skill_type": "active",
+      "target_type": "none"
+    },
+    {
+      "description": "锁定技。你受到其他玩家造成的【普通攻击】伤害后，对其施加一层「止戈」标记。\n「止戈」：造成的伤害降低1点，至多叠加3层；出牌阶段结束时清空自身所有「止戈」。",
+      "effects": [],
+      "id": "skill_stop_sword_skill",
+      "max_uses_per_turn": 0,
+      "name": "〖止戈〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "出牌阶段开始时，你摸一张牌并选择一项：①失去 2 点生命；②对自己施加一层「止戈」。\n「止戈」：造成的伤害降低1点，至多叠加3层；出牌阶段结束时清空自身所有「止戈」。",
+      "effects": [],
+      "id": "skill_mercy",
+      "max_uses_per_turn": 0,
+      "name": "〖仁慈〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "转换技。出牌阶段限一次。你可以①弃掉两张手牌，视为对一名其他玩家使用【跳过】；②摸两张牌，并对自己施加「跳过」。\n「跳过」：跳过该玩家的下一个完整回合，跳过后自动解除。",
+      "effects": [],
+      "id": "skill_oscillation",
+      "max_uses_per_turn": 1,
+      "name": "〖振荡〗",
+      "skill_type": "switch",
+      "target_type": "single_enemy"
+    },
+    {
+      "description": "锁定技。当你的手牌中存在【跳过】时，你需弃掉手牌中所有【跳过】并摸等量的牌。此外，你不能主动使用手牌中的【跳过】。",
+      "effects": [],
+      "id": "skill_noise",
+      "max_uses_per_turn": 0,
+      "name": "〖喧闹〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "锁定技。出牌阶段，你使用的第一张【普通攻击】会对目标施加一层「失明」。\n「失明」：造成伤害时本次伤害 -100%（归零），触发后移除一层。",
+      "effects": [],
+      "id": "skill_light_eye",
+      "max_uses_per_turn": 0,
+      "name": "〖光明之眼〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "每回合限一次。你可以将一张手牌视作【窥视】置入一名其他玩家的判定区中。\n【窥视】：目标出牌阶段开始时进行排中判定；失败则选择一项：①失去 3 点生命；②弃掉 2 张手牌。",
+      "effects": [],
+      "id": "skill_peep_eye",
+      "max_uses_per_turn": 1,
+      "name": "〖窥伺之眼〗",
+      "skill_type": "active",
+      "target_type": "single_enemy"
     }
   ]
 }

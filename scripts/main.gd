@@ -41,6 +41,15 @@ class DropPanel extends Button:
 	func _drop_data(_at_position: Vector2, data: Variant) -> void:
 		main_scene._drop_on_player(player_index, data)
 
+## 玩家面板顶部的说明文本：状态/预备区词条可点击查阅，同时保留拖放接收
+class StatusLabel extends RichTextLabel:
+	var player_index := -1
+	var main_scene: Control
+	func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
+		return main_scene._can_drop_on_player(player_index, data)
+	func _drop_data(_at_position: Vector2, data: Variant) -> void:
+		main_scene._drop_on_player(player_index, data)
+
 ## 日志区容器：接受手牌拖放（自动对自己使用）
 class DropLog extends Control:
 	var main_scene: Control
@@ -59,15 +68,31 @@ var game: AtlasGame
 var _dragging_card_index := -1
 var _drag_targets: Array[int] = []
 
+# ---------------- 布局常量（集中管理，避免散落的魔法数字） ----------------
+const ROOT_MIN_HEIGHT := 760          # 根容器逻辑高度（视口固定 800）
+const PLAYER_PANEL_HEIGHT := 156      # 玩家面板高度
+const MIDDLE_MIN_HEIGHT := 60         # 日志 + 侧栏区域最小高度
+const LOG_MIN_HEIGHT := 110           # 日志框最小高度
+const HAND_SCROLL_HEIGHT := 60        # 手牌滚动区最小高度
+const HAND_CARD_WIDTH := 170.0        # 手牌卡宽度（高度按手牌区高度动态均分）
+const HAND_CARD_SEP := 8.0            # 手牌卡横/纵间距
+const SIDEBAR_WIDTH := 262            # 右侧信息栏宽度
+const MENU_BTN_SIZE := Vector2(110, 32)
+const ACTION_BTN_HEIGHT := 36         # 底部操作按钮统一高度
+const ACTION_BTN_WIDTH := 160
+
 # ---- UI 引用 ----
 var log_label: RichTextLabel
+var dev_menu: DevMenu = null
+var _meta_click_frame: int = -10      # 最近一次点击富文本链接的帧号
 var info_label: Label
 var discard_info_label: Label
 var turn_label: Label
 var phase_side_label: Label
 var prompt_label: Label
 var hand_title: Label
-var hand_box: HBoxContainer
+var hand_scroll: ScrollContainer
+var hand_box: HFlowContainer
 var reserve_title: Label
 var reserve_box: HBoxContainer
 var player_panels: Array[Button] = []
@@ -109,7 +134,16 @@ func _ready() -> void:
 	game = AtlasGame.new()
 	game.message.connect(_on_log)
 	game.start_game()
+	if OS.is_debug_build():
+		dev_menu = DevMenu.new()
+		dev_menu.game = game
+		dev_menu.main_scene = self
+		dev_menu.on_refresh = _refresh
+		add_child(dev_menu)
+		dev_menu.visible = false
 	_refresh()
+	# 首帧布局完成后手牌区才有实际尺寸，再排一次让卡牌高度精确撑满
+	call_deferred("_refresh")
 
 func _apply_theme() -> void:
 	theme = UITheme.make_theme(16)
@@ -142,7 +176,7 @@ func _build_ui() -> void:
 	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# 固定逻辑高度（stretch 已设为 keep_height，视口高度恒为 800），避免进入场景瞬间
 	# 读到物理窗口尺寸而把根容器撑高，导致外层出现多余的纵向滚动条
-	root.custom_minimum_size = Vector2(0, 760)
+	root.custom_minimum_size = Vector2(0, ROOT_MIN_HEIGHT)
 	outer_scroll.add_child(root)
 
 	# 顶栏：标题 + 当前回合
@@ -166,9 +200,15 @@ func _build_ui() -> void:
 	turn_label.add_theme_font_size_override("font_size", 18)
 	turn_label.add_theme_color_override("font_color", UITheme.ACCENT)
 	top.add_child(turn_label)
+	var dev_btn := Button.new()
+	dev_btn.text = "开发"
+	dev_btn.custom_minimum_size = MENU_BTN_SIZE
+	dev_btn.visible = OS.is_debug_build()
+	dev_btn.pressed.connect(_toggle_dev_menu)
+	top.add_child(dev_btn)
 	var menu_btn := Button.new()
 	menu_btn.text = "主菜单"
-	menu_btn.custom_minimum_size = Vector2(110, 32)
+	menu_btn.custom_minimum_size = MENU_BTN_SIZE
 	menu_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/launcher.tscn"))
 	top.add_child(menu_btn)
 
@@ -180,18 +220,24 @@ func _build_ui() -> void:
 		var pb := DropPanel.new()
 		pb.player_index = i
 		pb.main_scene = self
-		pb.custom_minimum_size = Vector2(0, 156)
+		pb.custom_minimum_size = Vector2(0, PLAYER_PANEL_HEIGHT)
 		pb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var vbox := VBoxContainer.new()
 		vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 		vbox.add_theme_constant_override("separation", 1)
 		pb.add_child(vbox)
-		var rl := RichTextLabel.new()
+		var rl := StatusLabel.new()
+		rl.player_index = i
+		rl.main_scene = self
 		rl.bbcode_enabled = true
 		rl.scroll_active = false
 		# fit_content=true：按文本内容自动计算高度，不撑满面板也不被压扁
 		rl.fit_content = true
-		rl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# 需要接收点击才能触发 meta_clicked；拖放由 StatusLabel 自行转发给面板。
+		# 用 PASS 让「非链接区域」的点击继续冒泡到玩家面板，避免状态文字右侧空白吞掉选目标点击。
+		rl.mouse_filter = Control.MOUSE_FILTER_PASS
+		rl.meta_underlined = false
+		rl.meta_clicked.connect(_on_player_meta)
 		vbox.add_child(rl)
 		# 信息行：属性 + 状态 + 装备（可点击查看描述）
 		var info_row := HBoxContainer.new()
@@ -215,7 +261,7 @@ func _build_ui() -> void:
 	var middle := HBoxContainer.new()
 	middle.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	# 压缩中间说明区最小高度，保证内容较多时整体不出垂直滚动（其余空间仍会自动分给本区）
-	middle.custom_minimum_size = Vector2(0, 60)
+	middle.custom_minimum_size = Vector2(0, MIDDLE_MIN_HEIGHT)
 	middle.add_theme_constant_override("separation", 10)
 	root.add_child(middle)
 
@@ -224,7 +270,7 @@ func _build_ui() -> void:
 	log_label.scroll_following = true
 	log_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	log_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	log_label.custom_minimum_size = Vector2(0, 110)
+	log_label.custom_minimum_size = Vector2(0, LOG_MIN_HEIGHT)
 	log_label.add_theme_stylebox_override("normal", UITheme.flat(UITheme.BG_INPUT, UITheme.BORDER, 8, 1))
 	# 日志区外包 DropLog，接受手牌拖放（自动对自己使用）
 	var drop_log := DropLog.new()
@@ -240,7 +286,7 @@ func _build_ui() -> void:
 
 	# 侧栏包一层滚动容器：信息多时侧栏内部滚动，不撑大主界面导致整体滚动
 	var side_scroll := ScrollContainer.new()
-	side_scroll.custom_minimum_size = Vector2(262, 0)
+	side_scroll.custom_minimum_size = Vector2(SIDEBAR_WIDTH, 0)
 	side_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	side_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	side_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -287,15 +333,21 @@ func _build_ui() -> void:
 	hand_title.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	root.add_child(hand_title)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 60)
-	# 参与纵向弹性分配：窗口高时手牌区变大，卡牌描述不被裁切
+	scroll.custom_minimum_size = Vector2(0, HAND_SCROLL_HEIGHT)
+	# 参与纵向弹性分配：窗口高时手牌区变大，卡牌高度随之撑满该区域
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_stretch_ratio = 0.6
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# 手牌改为自动换行排布：横向不再滚动，纵向仅在行数过多时滚动
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	root.add_child(scroll)
-	hand_box = HBoxContainer.new()
-	hand_box.add_theme_constant_override("separation", 8)
+	hand_scroll = scroll
+	# 手牌区尺寸变化（首帧布局、窗口缩放）时重新分配卡牌高度
+	scroll.item_rect_changed.connect(_fit_hand_cards)
+	hand_box = HFlowContainer.new()
+	hand_box.add_theme_constant_override("h_separation", int(HAND_CARD_SEP))
+	hand_box.add_theme_constant_override("v_separation", int(HAND_CARD_SEP))
+	hand_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(hand_box)
 
 	# 操作按钮栏：技能按钮动态生成 + 固定操作按钮
@@ -307,23 +359,23 @@ func _build_ui() -> void:
 	bar.add_child(skill_bar)
 	end_play_btn = Button.new()
 	end_play_btn.text = "结束出牌阶段"
-	end_play_btn.custom_minimum_size = Vector2(160, 36)
+	end_play_btn.custom_minimum_size = Vector2(ACTION_BTN_WIDTH, ACTION_BTN_HEIGHT)
 	UITheme.style_button(end_play_btn, UITheme.accent_button_styles())
 	end_play_btn.pressed.connect(_on_end_play)
 	bar.add_child(end_play_btn)
 	end_response_btn = Button.new()
-	end_response_btn.custom_minimum_size = Vector2(220, 36)
+	end_response_btn.custom_minimum_size = Vector2(220, ACTION_BTN_HEIGHT)
 	UITheme.style_button(end_response_btn, UITheme.danger_button_styles())
 	end_response_btn.pressed.connect(_on_end_response)
 	bar.add_child(end_response_btn)
 	cancel_target_btn = Button.new()
 	cancel_target_btn.text = "取消操作（右键）"
-	cancel_target_btn.custom_minimum_size = Vector2(120, 36)
+	cancel_target_btn.custom_minimum_size = Vector2(120, ACTION_BTN_HEIGHT)
 	cancel_target_btn.pressed.connect(_on_cancel_target)
 	bar.add_child(cancel_target_btn)
 	discard_hint_btn = Button.new()
 	discard_hint_btn.text = "弃牌中…"
-	discard_hint_btn.custom_minimum_size = Vector2(160, 36)
+	discard_hint_btn.custom_minimum_size = Vector2(ACTION_BTN_WIDTH, ACTION_BTN_HEIGHT)
 	discard_hint_btn.disabled = true
 	discard_hint_btn.visible = false
 	UITheme.style_button(discard_hint_btn, UITheme.accent_button_styles())
@@ -335,6 +387,7 @@ func _build_ui() -> void:
 	char_pick_box = ov0["box"]
 	char_pick_scroll = ov0["scroll"] as ScrollContainer
 	get_viewport().size_changed.connect(_fit_char_pick)
+	get_viewport().size_changed.connect(_fit_hand_cards)
 	_fit_char_pick()
 
 	var ov1 := _make_overlay()
@@ -474,28 +527,38 @@ func _refresh() -> void:
 		var p := g.players[i]
 		var bb := "[center][b][font_size=18]%s[/font_size][/b][/center]\n" % p.name
 		bb += "[center][color=lightgray]生命 %d / %d　手牌 %d[/color][/center]\n" % [p.hp, p.max_hp, p.hand.size()]
-		var st := ""
+		var st_parts: Array[String] = []
 		for s in p.status_ids():
 			var n := p.status_layer(s)
-			st += "%s" % _status_display_name(s)
+			var s_label := _status_display_name(s)
 			if n > 1:
-				st += "×%d" % n
-			st += " "
+				s_label += "×%d" % n
+			st_parts.append("[url=st:%s]%s[/url]" % [s, s_label])
 		if p.scab > 0:
-			st += "「痂」%d " % p.scab
+			st_parts.append("[url=scab]「痂」%d[/url]" % p.scab)
 		if p.dying:
-			st += "「濒死」"
+			st_parts.append("[url=dying]「濒死」[/url]")
 		if p.dead:
-			st += "「死亡」"
-		if st != "":
-			bb += "[center][color=gold]%s[/color][/center]\n" % st
-		# 预备区（对手可见全部内容）与陷阱（对手仅见数量）
+			st_parts.append("[url=dead]「死亡」[/url]")
+		if not st_parts.is_empty():
+			var st_joined := ""
+			for part in st_parts:
+				if st_joined != "":
+					st_joined += " "
+				st_joined += part
+			bb += "[center][color=gold]%s[/color][/center]\n" % st_joined
+		# 预备区（对手可见全部内容）与陷阱（对手仅见数量），卡名可点击查阅
 		var rv_names: Array[String] = []
 		for rv in p.reserve:
-			rv_names.append(String(g.db.get_card(rv).get("name", rv)))
-		bb += "[center][color=plum]预备区：%s[/color]　[color=orange]陷阱 ×%d[/color][/center]" % [("、".join(rv_names) if not rv_names.is_empty() else "无"), p.traps.size()]
+			rv_names.append("[url=card:%s]%s[/url]" % [rv, String(g.db.get_card(rv).get("name", rv))])
+		var rv_joined := ""
+		for nm in rv_names:
+			if rv_joined != "":
+				rv_joined += "、"
+			rv_joined += nm
+		bb += "[center][color=plum]预备区：%s[/color]　[color=orange]陷阱 ×%d[/color][/center]" % [(rv_joined if rv_joined != "" else "无"), p.traps.size()]
 		player_labels[i].text = bb
-		# 信息行：属性 + 状态 + 装备（全部可点击查看描述）
+		# 信息行：属性 + 装备（状态已移动到上方状态栏，点击可查阅）
 		var info_row: HBoxContainer = player_info_rows[i]
 		for c in info_row.get_children():
 			c.queue_free()
@@ -510,24 +573,6 @@ func _refresh() -> void:
 			var attr_name := String(attr.get("name", "属性"))
 			attr_btn.pressed.connect(func(): _show_info(attr_name, attr_desc))
 			info_row.add_child(attr_btn)
-		for s in p.status_ids():
-			var sname := _status_display_name(s)
-			var sbtn := Button.new()
-			sbtn.text = sname
-			sbtn.add_theme_font_size_override("font_size", 10)
-			sbtn.custom_minimum_size = Vector2(50, 20)
-			sbtn.tooltip_text = sname
-			var sid := s
-			sbtn.pressed.connect(func(): _show_info(sname, _status_desc(sid)))
-			info_row.add_child(sbtn)
-		if p.dying:
-			var dbtn := Button.new()
-			dbtn.text = "「濒死」"
-			dbtn.add_theme_font_size_override("font_size", 10)
-			dbtn.custom_minimum_size = Vector2(50, 20)
-			dbtn.tooltip_text = "濒死"
-			dbtn.pressed.connect(func(): _show_info("濒死", "生命值为 0，进入濒死状态。需要其他玩家使用食物牌救援，否则回合结束时死亡。"))
-			info_row.add_child(dbtn)
 		if not p.equipment.is_empty():
 			var eq_label := Label.new()
 			eq_label.text = "装备:"
@@ -579,7 +624,7 @@ func _refresh() -> void:
 	# 当前视图玩家（响应窗口时切换为防御方 / 被询问救援的玩家 / 弃牌选择的目标）
 	var view := cur
 	if g.mode == AtlasGame.Mode.RESPONSE:
-		if String(g.pending.get("kind", "")) == "dying_save":
+		if String(g.pending.get("kind", "")) == AtlasGame.PENDING_DYING_SAVE:
 			var rescuers: Array = g.pending.get("rescuers", [])
 			if not rescuers.is_empty():
 				view = g.players[int(rescuers[0])]
@@ -592,7 +637,7 @@ func _refresh() -> void:
 	for c in reserve_box.get_children():
 		c.visible = false
 		c.queue_free()
-	var reserve_clickable := g.mode == AtlasGame.Mode.RESPONSE and String(g.pending.get("kind", "")) == "damage"
+	var reserve_clickable := g.mode == AtlasGame.Mode.RESPONSE and String(g.pending.get("kind", "")) == AtlasGame.PENDING_DAMAGE
 	reserve_title.text = "%s 的预备区（%d）%s" % [view.name, view.reserve.size(), "—— 响应中，可点击防御牌直接使用" if reserve_clickable else ""]
 	reserve_title.visible = not view.reserve.is_empty() or reserve_clickable
 	# 分组：防御牌按防御数值堆叠，其他牌单独列出
@@ -645,9 +690,9 @@ func _refresh() -> void:
 			hand_title.text = "%s 的手牌（点击打出；防御牌点击=布置到预备区）" % view.name
 		AtlasGame.Mode.RESPONSE:
 			var kind := String(g.pending.get("kind", ""))
-			if kind == "skip_response":
+			if kind == AtlasGame.PENDING_SKIP_RESPONSE:
 				hand_title.text = "[响应中] %s 的手牌（只能打出【跳过】抵消）" % view.name
-			elif kind == "dying_save":
+			elif kind == AtlasGame.PENDING_DYING_SAVE:
 				hand_title.text = "[濒死救援] %s 的手牌（只能打出食物牌救人，或放弃）" % view.name
 			else:
 				hand_title.text = "[响应中] %s 的手牌（只能打出【防御】类牌）" % view.name
@@ -660,20 +705,27 @@ func _refresh() -> void:
 		_:
 			hand_title.text = "%s 的手牌" % view.name
 	var clickable := g.mode == AtlasGame.Mode.PLAY or g.mode == AtlasGame.Mode.RESPONSE or g.mode == AtlasGame.Mode.DISCARD or g.mode == AtlasGame.Mode.DISCARD_PICK
+	# 手牌排版：按可用宽度算出每行张数（自动换行），再把可用高度均分给每行，
+	# 让卡牌撑满手牌区；行数变多时高度自动收缩，下限 72px。
+	var lay := _hand_layout(view.hand.size())
+	var card_h: float = lay["card_h"]
 	for i in view.hand.size():
 		var cid := view.hand[i]
 		var card := g.db.get_card(cid)
 		var b := DraggableCard.new()
 		b.hand_index = i
 		b.main_scene = self
-		b.custom_minimum_size = Vector2(150, 60)
+		b.custom_minimum_size = Vector2(HAND_CARD_WIDTH, card_h)
 		b.text = "%s\n%s" % [String(card.get("name", cid)), String(card.get("description", ""))]
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		b.add_theme_font_size_override("font_size", 12)
 		UITheme.style_button(b, UITheme.card_styles(UITheme.card_color(card)))
 		b.disabled = not clickable
 		var idx := i
 		b.pressed.connect(func(): _on_card(idx))
 		hand_box.add_child(b)
+	# 手牌区的实际尺寸要等布局完成才稳定，下一帧按真实高度再校正一次
+	call_deferred("_fit_hand_cards")
 
 	# 提示与操作按钮
 	match g.mode:
@@ -683,9 +735,9 @@ func _refresh() -> void:
 			prompt_label.text = "请点击上方高亮的玩家面板选择目标。"
 		AtlasGame.Mode.RESPONSE:
 			var kind := String(g.pending.get("kind", ""))
-			if kind == "skip_response":
+			if kind == AtlasGame.PENDING_SKIP_RESPONSE:
 				prompt_label.text = "响应窗口：%s 即将获得「跳过」。打出另一张【跳过】抵消，或点「结束响应」。" % view.name
-			elif kind == "dying_save":
+			elif kind == AtlasGame.PENDING_DYING_SAVE:
 				var dying_p := g.players[int(g.pending["dying_player"])]
 				prompt_label.text = "濒死救援：%s 处于「濒死」！%s 可打出食物牌救人（视为其使用），或点「放弃救援」。" % [dying_p.name, view.name]
 			else:
@@ -710,13 +762,22 @@ func _refresh() -> void:
 		for sid in cur.skill_ids:
 			var sk := g.db.get_skill(sid)
 			var stype := String(sk.get("skill_type", ""))
-			if stype != "active" and stype != "switch":
+			if stype != "active" and stype != "switch" and stype != "limited":
 				continue
 			var b := Button.new()
 			var left := int(cur.skill_uses_left.get(sid, 0))
-			b.text = "%s（剩%d）" % [String(sk.get("name", sid)), left]
+			if stype == "limited":
+				var used := bool(cur.limited_used.get(sid, false))
+				b.text = "%s（%s）" % [String(sk.get("name", sid)), "已用" if used else "未用"]
+				b.disabled = used
+			else:
+				b.text = "%s（剩%d）" % [String(sk.get("name", sid)), left]
+				b.disabled = left <= 0
 			b.custom_minimum_size = Vector2(0, 36)
-			b.disabled = left <= 0
+			# 狄瑟〖沙葬〗：未觉醒时置灰不可用
+			if sid == "skill_sand_burial" and not cur.star_brilliance_awakened:
+				b.disabled = true
+				b.text = "%s（未觉醒）" % String(sk.get("name", sid))
 			b.tooltip_text = String(sk.get("description", ""))
 			UITheme.style_button(b, UITheme.skill_button_styles())
 			var id := sid
@@ -811,18 +872,35 @@ func _rebuild_skill_pick() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 20)
 	title.add_theme_color_override("font_color", UITheme.ACCENT)
-	if kind == "exile_ask":
+	if kind == AtlasGame.PENDING_EXILE_ASK:
 		title.text = "是否发动限定技〖放逐〗？"
-	elif kind == "sage":
+	elif kind == AtlasGame.PENDING_SAGE:
 		title.text = "〖贤者之书〗：选择一张要丢弃的牌"
-	elif kind == "fractal":
+	elif kind == AtlasGame.PENDING_FRACTAL:
 		title.text = "〖分形几何〗：选择一张【普通攻击】转化为【防御2】"
-	elif kind == "leap":
+	elif kind == AtlasGame.PENDING_LEAP:
 		title.text = "〖信仰之跃〗：选择摸牌数量"
+	elif kind == AtlasGame.PENDING_MERCY:
+		title.text = "〖仁慈〗：请选择一项"
+	elif kind == AtlasGame.PENDING_OSC_FORM:
+		title.text = "〖振荡〗：请选择形态"
+	elif kind == AtlasGame.PENDING_PEEP_HAND:
+		title.text = "〖窥伺之眼〗：请选择一张手牌视作【窥视】"
+	elif kind == AtlasGame.PENDING_SAND_BURY_HAND:
+		var sub := String(game.pending.get("sub_kind", ""))
+		var step := int(game.pending.get("step", 1))
+		if sub == "tip_discharge":
+			title.text = "〖尖端放电〗：请选择一张手牌弃置"
+		elif sub == "osc_discard":
+			title.text = "〖振荡〗形态①：请选择第 %d 张手牌弃置（共需 2 张）" % step
+		else:
+			title.text = "〖沙葬〗：请选择第 %d 张要弃置的牌（从手牌/装备/预备区中选）" % step
+	elif kind == "judge_prompt":
+		title.text = "%s：请选择一项" % String(game.pending.get("source_name", "判定失败"))
 	else:
 		title.text = "%s：选择一张加入手牌" % String(sk.get("name", "技能"))
 	skill_pick_box.add_child(title)
-	if kind == "exile_ask":
+	if kind == AtlasGame.PENDING_EXILE_ASK:
 		var yes := Button.new()
 		yes.text = "发动〖放逐〗"
 		yes.custom_minimum_size = Vector2(280, 48)
@@ -838,13 +916,33 @@ func _rebuild_skill_pick() -> void:
 		var token := String(opt)
 		var tok := token
 		var b := Button.new()
-		var card: Dictionary = {}
+		var card: Dictionary = {"type": "basic"}
+		var label := token
 		if kind == "skill_retrieve":
 			card = game.db.get_card(token)
-			b.text = String(card.get("name", token))
+			label = String(card.get("name", token))
 		elif kind == "leap":
-			b.text = "摸 %s 张（失去 %d 点生命）" % [token, int(token) * 2]
-			card = {"type": "basic"}
+			label = "摸 %s 张（失去 %d 点生命）" % [token, int(token) * 2]
+		elif kind == AtlasGame.PENDING_MERCY:
+			if token == "lose_hp":
+				label = "① 失去 2 点生命"
+			else:
+				label = "② 对自己施加一层「止戈」"
+			card = {}
+		elif kind == AtlasGame.PENDING_OSC_FORM:
+			if token == "form_1":
+				label = "① 弃掉两张手牌，视作对一名其他玩家使用【跳过】"
+			else:
+				label = "② 摸两张牌，并对自己施加「跳过」"
+			card = {}
+		elif kind == "judge_prompt":
+			# 来自判定 prompt_choice 的选项，token 直接作为 label
+			var choices: Array = game.pending.get("choices", [])
+			var idx := int(token) if token.is_valid_int() else -1
+			if idx >= 0 and idx < choices.size():
+				var choice: Dictionary = choices[idx]
+				label = String(choice.get("label", token))
+			card = {}
 		else:
 			var parts := token.split(":")
 			var zone_name := "手牌"
@@ -866,7 +964,8 @@ func _rebuild_skill_pick() -> void:
 			elif parts[0] == "trap" and zone_idx >= 0 and zone_idx < game.players[game.current].traps.size():
 				cid = game.players[game.current].traps[zone_idx]
 			card = game.db.get_card(cid)
-			b.text = "%s：%s" % [zone_name, String(card.get("name", cid))]
+			label = "%s：%s" % [zone_name, String(card.get("name", cid))]
+		b.text = label
 		b.custom_minimum_size = Vector2(320, 48)
 		UITheme.style_button(b, UITheme.card_styles(UITheme.card_color(card)))
 		b.pressed.connect(func(): _on_skill_pick(tok))
@@ -919,6 +1018,14 @@ func _on_log(text: String) -> void:
 	log_label.append_text(text + "\n")
 
 func _on_panel(i: int) -> void:
+	# 富文本链接与面板点击来自同一次鼠标释放：延迟到本帧末再判断，
+	# 若同一次点击刚触发过链接（meta_clicked）就忽略面板选目标。
+	call_deferred("_apply_panel_click", i)
+
+func _apply_panel_click(i: int) -> void:
+	# 同一次鼠标释放既命中链接又命中面板按钮时，只保留链接（查看说明）的行为
+	if Engine.get_process_frames() == _meta_click_frame:
+		return
 	game.ui_select_target(i)
 	_refresh()
 
@@ -935,6 +1042,39 @@ func _on_card(i: int) -> void:
 func _on_reserve(i: int) -> void:
 	game.ui_play_reserve(i)
 	_refresh()
+
+# ---------------- 手牌排版 ----------------
+
+func _hand_layout(count: int) -> Dictionary:
+	## 按手牌区实际尺寸计算每行张数与卡牌高度，让卡牌撑满可用空间
+	var avail_w := 1252.0
+	if hand_scroll != null and hand_scroll.size.x > HAND_CARD_WIDTH:
+		avail_w = hand_scroll.size.x - 8.0
+	var per_row := maxi(1, int((avail_w + HAND_CARD_SEP) / (HAND_CARD_WIDTH + HAND_CARD_SEP)))
+	var rows := maxi(1, int(ceil(float(maxi(1, count)) / float(per_row))))
+	var avail_h := 150.0
+	if hand_scroll != null and hand_scroll.size.y > 0.0:
+		avail_h = hand_scroll.size.y - 8.0
+	var card_h := clampf((avail_h - float(rows - 1) * HAND_CARD_SEP) / float(rows), 72.0, 260.0)
+	return {"per_row": per_row, "card_h": card_h}
+
+func _fit_hand_cards() -> void:
+	## 布局稳定后校正卡牌高度（首帧尺寸未定、窗口尺寸变化时调用）
+	if hand_box == null:
+		return
+	var count := 0
+	for c in hand_box.get_children():
+		if not c.is_queued_for_deletion():
+			count += 1
+	if count == 0:
+		return
+	var card_h: float = _hand_layout(count)["card_h"]
+	for c in hand_box.get_children():
+		if c.is_queued_for_deletion():
+			continue
+		var ctl := c as Control
+		if absf(ctl.custom_minimum_size.y - card_h) > 0.5:
+			ctl.custom_minimum_size.y = card_h
 
 func _on_skill(id: String) -> void:
 	game.ui_use_skill(id)
@@ -953,6 +1093,13 @@ func _on_cancel_target() -> void:
 	_refresh()
 
 func _input(event: InputEvent) -> void:
+	# F12：开关开发者菜单（仅调试构建）
+	var key := event as InputEventKey
+	if key != null and key.pressed and not key.echo and key.keycode == KEY_F12:
+		if OS.is_debug_build():
+			_toggle_dev_menu()
+			get_viewport().set_input_as_handled()
+		return
 	# 右键取消当前选目标操作（用 _input 而非 _unhandled_input，避免被面板等控件吞掉事件）
 	var mb := event as InputEventMouseButton
 	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_RIGHT:
@@ -960,6 +1107,15 @@ func _input(event: InputEvent) -> void:
 	if game != null and game.mode == AtlasGame.Mode.SELECT_TARGET:
 		_on_cancel_target()
 		get_viewport().set_input_as_handled()
+
+func _toggle_dev_menu() -> void:
+	if dev_menu == null:
+		return
+	if dev_menu.visible:
+		dev_menu.visible = false
+	else:
+		dev_menu.visible = true
+		dev_menu.rebuild()
 
 func _on_interstitial() -> void:
 	game.ui_confirm_interstitial()
@@ -994,16 +1150,33 @@ func _show_info(title: String, desc: String) -> void:
 	info_popup_desc.text = desc
 	info_popup.visible = true
 
+# 玩家面板富文本词条点击：状态 / 痂 / 濒死 / 死亡 / 预备区卡牌
+func _on_player_meta(meta: String) -> void:
+	_meta_click_frame = Engine.get_process_frames()
+	if meta.begins_with("st:"):
+		var sid := meta.substr(3)
+		_show_info(_status_display_name(sid), _status_desc(sid))
+	elif meta == "scab":
+		_show_info("「痂」", "你的回合外受到伤害时，将其中 40%（向上取整）记录为「痂」。你的回合开始时，回复与「痂」记录值相等的生命并清空记录。")
+	elif meta == "dying":
+		_show_info("「濒死」", "生命值为 0，进入濒死状态。按座位顺序询问救援，任意玩家可打出食物牌（视为濒死角色使用）；未被救活则宣布死亡。")
+	elif meta == "dead":
+		_show_info("「死亡」", "该玩家已死亡，退出本局对战。")
+	elif meta.begins_with("card:"):
+		var cid := meta.substr(5)
+		var c := game.db.get_card(cid)
+		_show_info(String(c.get("name", cid)), String(c.get("description", "")))
+
 func _status_display_name(status_id: String) -> String:
 	# 优先取 statuses.json 中的名称，回退到硬编码表，最后显示 id
-	var st: Dictionary = game.db.statuses.get(status_id, {})
+	var st: Dictionary = game.db.get_status(status_id)
 	if st.has("name"):
 		return String(st["name"])
 	return String(AtlasGame.STATUS_NAMES.get(status_id, status_id))
 
 func _status_desc(status_id: String) -> String:
 	# 优先取 statuses.json 中的描述
-	var st: Dictionary = game.db.statuses.get(status_id, {})
+	var st: Dictionary = game.db.get_status(status_id)
 	if st.has("description") and not String(st["description"]).is_empty():
 		return String(st["description"])
 	match status_id:

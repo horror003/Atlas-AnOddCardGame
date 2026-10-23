@@ -16,7 +16,7 @@
         },
         "effect": {
           "type": "damage_bonus",
-          "value": 1.0
+          "value": 1
         },
         "hook": "on_outgoing_damage"
       }

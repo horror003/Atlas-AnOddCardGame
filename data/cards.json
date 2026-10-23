@@ -1,7 +1,6 @@
 {
   "cards": [
 	{
-	  "can_target_ally": true,
 	  "defense_value": 0,
 	  "description": "对目标造成3点\n物理伤害。",
 	  "effects": [
@@ -11,7 +10,7 @@
 			  "damage_type": "physical",
 			  "target": "selected",
 			  "type": "deal_damage",
-			  "value": 3.0
+			  "value": 3
 			}
 		  ],
 		  "trigger": "on_play"
@@ -29,7 +28,7 @@
 	  "type": "basic"
 	},
 	{
-	  "defense_value": 1.0,
+	  "defense_value": 1,
 	  "description": "格挡1点伤害。\n出牌阶段点击=布置到预备区。",
 	  "effects": [],
 	  "id": "defend1",
@@ -44,7 +43,7 @@
 	  "type": "basic"
 	},
 	{
-	  "defense_value": 2.0,
+	  "defense_value": 2,
 	  "description": "格挡2点伤害。\n出牌阶段点击=布置到预备区。",
 	  "effects": [],
 	  "id": "defend2",
@@ -59,7 +58,7 @@
 	  "type": "basic"
 	},
 	{
-	  "defense_value": 3.0,
+	  "defense_value": 3,
 	  "description": "格挡3点伤害。\n出牌阶段点击=布置到预备区。",
 	  "effects": [],
 	  "id": "defend3",
@@ -74,7 +73,7 @@
 	  "type": "basic"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "令目标跳过其\n下一个完整回合。\n对已有［跳过］者使用=解除。",
 	  "effects": [],
 	  "id": "skip",
@@ -89,7 +88,7 @@
 	  "type": "basic"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "自己摸2张牌。",
 	  "effects": [
 		{
@@ -97,7 +96,7 @@
 			{
 			  "target": "self",
 			  "type": "draw_cards",
-			  "value": 2.0
+			  "value": 2
 			}
 		  ],
 		  "trigger": "on_play"
@@ -115,7 +114,7 @@
 	  "type": "basic"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "从特殊事件牌堆\n抽一张并执行。",
 	  "effects": [
 		{
@@ -140,7 +139,7 @@
 	  "type": "basic"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "对目标造成2点法术伤害。",
 	  "effects": [
 		{
@@ -149,7 +148,7 @@
 			  "damage_type": "magical",
 			  "target": "selected",
 			  "type": "deal_damage",
-			  "value": 2.0
+			  "value": 2
 			}
 		  ],
 		  "trigger": "on_play"
@@ -167,7 +166,7 @@
 	  "type": "special_attack"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "对目标造成2点灵魂伤害。",
 	  "effects": [
 		{
@@ -176,7 +175,7 @@
 			  "damage_type": "soul",
 			  "target": "selected",
 			  "type": "deal_damage",
-			  "value": 2.0
+			  "value": 2
 			}
 		  ],
 		  "trigger": "on_play"
@@ -194,7 +193,7 @@
 	  "type": "special_attack"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "令目标失去2点生命。",
 	  "effects": [
 		{
@@ -203,7 +202,7 @@
 			  "damage_type": "hp_loss",
 			  "target": "selected",
 			  "type": "deal_damage",
-			  "value": 2.0
+			  "value": 2
 			}
 		  ],
 		  "trigger": "on_play"
@@ -220,13 +219,13 @@
 	  "type": "special_attack"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "使目标陷入2回合「燃烧」状态\n（回合开始时失去2点生命）。",
 	  "effects": [
 		{
 		  "actions": [
 			{
-			  "duration": 2.0,
+			  "duration": 2,
 			  "status_id": "burn",
 			  "target": "selected",
 			  "type": "add_status"
@@ -246,7 +245,7 @@
 	  "type": "special_attack"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "对目标造成2点物理\n+1点法术伤害\n（分次独立响应）。",
 	  "effects": [
 		{
@@ -255,13 +254,13 @@
 			  "damage_type": "physical",
 			  "target": "selected",
 			  "type": "deal_damage",
-			  "value": 2.0
+			  "value": 2
 			},
 			{
 			  "damage_type": "magical",
 			  "target": "selected",
 			  "type": "deal_damage",
-			  "value": 1.0
+			  "value": 1
 			}
 		  ],
 		  "trigger": "on_play"
@@ -278,7 +277,7 @@
 	  "type": "special_attack"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "回复5点生命。",
 	  "effects": [
 		{
@@ -286,7 +285,7 @@
 			{
 			  "target": "selected",
 			  "type": "heal",
-			  "value": 5.0
+			  "value": 5
 			}
 		  ],
 		  "trigger": "on_play"
@@ -303,7 +302,7 @@
 	  "type": "food"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "回复3点生命。",
 	  "effects": [
 		{
@@ -311,7 +310,7 @@
 			{
 			  "target": "selected",
 			  "type": "heal",
-			  "value": 3.0
+			  "value": 3
 			}
 		  ],
 		  "trigger": "on_play"
@@ -328,7 +327,7 @@
 	  "type": "food"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "武器。你造成的\n物理伤害+1。",
 	  "effects": [],
 	  "id": "eq_sword",
@@ -340,7 +339,7 @@
 		},
 		"effect": {
 		  "type": "damage_bonus",
-		  "value": 1.0
+		  "value": 1
 		},
 		"hook": "on_outgoing_damage"
 	  },
@@ -353,7 +352,7 @@
 	  "type": "equipment"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "防具。你受到的\n物理伤害-1。",
 	  "effects": [],
 	  "id": "eq_armor",
@@ -365,7 +364,7 @@
 		},
 		"effect": {
 		  "type": "damage_bonus",
-		  "value": -1.0
+		  "value": -1
 		},
 		"hook": "on_incoming_damage"
 	  },
@@ -378,7 +377,7 @@
 	  "type": "equipment"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "进入目标预备区。\n其判定阶段排中判定：\n失败则失去2点生命。",
 	  "effects": [],
 	  "id": "dj_curse",
@@ -389,7 +388,7 @@
 			"damage_type": "hp_loss",
 			"target": "selected",
 			"type": "deal_damage",
-			"value": 2.0
+			"value": 2
 		  }
 		],
 		"method": "coin",
@@ -404,7 +403,7 @@
 	  "type": "delayed_judge"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "进入目标预备区。\n其判定阶段摸牌判定：\n若为基础牌则受2点物理伤害。",
 	  "effects": [],
 	  "id": "dj_weak",
@@ -418,7 +417,7 @@
 			"damage_type": "physical",
 			"target": "selected",
 			"type": "deal_damage",
-			"value": 2.0
+			"value": 2
 		  }
 		]
 	  },
@@ -431,7 +430,7 @@
 	  "type": "delayed_judge"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "布置到陷阱区。\n当对手打出攻击牌时，\n对其造成2点物理伤害。",
 	  "effects": [
 		{
@@ -440,7 +439,7 @@
 			  "damage_type": "physical",
 			  "target": "selected",
 			  "type": "deal_damage",
-			  "value": 2.0
+			  "value": 2
 			}
 		  ],
 		  "trigger": "on_trap"
@@ -461,7 +460,7 @@
 	  "type": "trap"
 	},
 	{
-	  "defense_value": 0.0,
+	  "defense_value": 0,
 	  "description": "武器。你的单一回合内，你每打出过一张【普通攻击】，\n你接下来的【普通攻击】伤害就+1，至多叠加3层",
 	  "effects": [],
 	  "id": "eq_kerberos",
@@ -473,7 +472,7 @@
 		  "damage_type": "physical"
 		},
 		"effect": {
-		  "max": 3.0,
+		  "max": 3,
 		  "type": "damage_bonus",
 		  "value": "per_attack_used_this_turn"
 		},
@@ -483,28 +482,148 @@
 	  "tags": [],
 	  "target_type": "none",
 	  "type": "equipment"
+	},
+	{
+	  "defense_value": 0,
+	  "description": "对一名其他玩家造成 1 点灵魂伤害，并施加持续 2 回合的「触电」标记。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "damage_type": "soul",
+			  "target": "selected",
+			  "type": "deal_damage",
+			  "value": 1
+			},
+			{
+			  "duration": 2,
+			  "status_id": "electrified",
+			  "target": "selected",
+			  "type": "add_status"
+			}
+		  ],
+		  "trigger": "on_play"
+		}
+	  ],
+	  "id": "special_electric_shock",
+	  "is_defense": false,
+	  "name": "【电击1】",
+	  "subtype": "attack",
+	  "tags": [
+		"special",
+		"attack"
+	  ],
+	  "target_type": "single_enemy",
+	  "type": "special"
+	},
+	{
+	  "defense_value": 0,
+	  "description": "置入目标预备区。目标回合开始时进行两次排中判定，第一次成功则不再判定；若两次均失败，失去 8 点生命；若目标带有「触电」标记，额外失去 4 点生命。",
+	  "effects": [],
+	  "id": "special_franklin_key",
+	  "is_defense": false,
+	  "judge": {
+		"method": "coin",
+		"multi_judge": {
+		  "count": 2,
+		  "interrupt_on_success": true
+		},
+		"fail_actions": [
+		  {
+			"damage_type": "hp_loss",
+			"target": "selected",
+			"type": "deal_damage",
+			"value": 8
+		  },
+		  {
+			"damage_type": "hp_loss",
+			"target": "selected",
+			"type": "conditional_deal_damage",
+			"value": 4,
+			"condition_status": "electrified"
+		  }
+		],
+		"success_actions": []
+	  },
+	  "name": "【富兰克林之钥】",
+	  "subtype": "judge",
+	  "tags": [
+		"special",
+		"judge"
+	  ],
+	  "target_type": "single_enemy",
+	  "type": "special",
+	  "zone": "reserve"
+	},
+	{
+	  "defense_value": 0,
+	  "description": "置入目标预备区。目标出牌阶段开始时进行一次排中判定：若判定失败，则选择一项：①失去 3 点生命；②弃掉 2 张手牌。",
+	  "effects": [],
+	  "id": "special_peek",
+	  "is_defense": false,
+	  "judge": {
+		"method": "coin",
+		"trigger_phase": "play_start",
+		"fail_actions": [
+		  {
+			"prompt_choice": [
+			  {
+				"label": "失去 3 点生命",
+				"actions": [
+				  {
+					"damage_type": "hp_loss",
+					"target": "selected",
+					"type": "deal_damage",
+					"value": 3
+				  }
+				]
+			  },
+			  {
+				"label": "弃掉 2 张手牌",
+				"actions": [
+				  {
+					"target": "selected",
+					"type": "random_discard",
+					"value": 2
+				  }
+				]
+			  }
+			]
+		  }
+		],
+		"success_actions": []
+	  },
+	  "name": "【窥视】",
+	  "subtype": "judge",
+	  "tags": [
+		"special",
+		"judge"
+	  ],
+	  "target_type": "single_enemy",
+	  "type": "special",
+	  "zone": "reserve"
 	}
   ],
   "deck_composition": {
 	"basic_attack": 15,
-	"branded_chocolate": 3.0,
-	"defend1": 7.0,
-	"defend2": 5.0,
-	"defend3": 3.0,
-	"dj_curse": 2.0,
-	"dj_weak": 2.0,
-	"draw": 4.0,
-	"eq_armor": 1.0,
-	"eq_kerberos": 1.0,
-	"eq_sword": 2.0,
-	"food_potion1": 2.0,
-	"ignite": 2.0,
-	"magic_bolt": 3.0,
-	"refresh": 2.0,
-	"skip": 3.0,
-	"special_event": 4.0,
-	"trap_ambush": 2.0,
-	"twin_edge": 2.0,
-	"wither": 2.0
+	"branded_chocolate": 3,
+	"defend1": 7,
+	"defend2": 5,
+	"defend3": 3,
+	"dj_curse": 2,
+	"dj_weak": 2,
+	"draw": 4,
+	"eq_armor": 1,
+	"eq_kerberos": 1,
+	"eq_sword": 2,
+	"food_potion1": 2,
+	"ignite": 2,
+	"magic_bolt": 3,
+	"refresh": 2,
+	"skip": 3,
+	"special_event": 4,
+	"trap_ambush": 2,
+	"twin_edge": 2,
+	"wither": 2
   }
 }

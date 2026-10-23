@@ -14,7 +14,7 @@
 		  "actions": [
 			{
 			  "type": "draw_all",
-			  "value": 1.0
+			  "value": 1
 			}
 		  ],
 		  "trigger": "on_resolve"
@@ -33,7 +33,7 @@
 			  "damage_type": "hp_loss",
 			  "target": "selected",
 			  "type": "deal_damage",
-			  "value": 5.0
+			  "value": 5
 			}
 		  ],
 		  "trigger": "on_resolve"
@@ -51,7 +51,7 @@
 			{
 			  "target": "self",
 			  "type": "heal",
-			  "value": 2.0
+			  "value": 2
 			}
 		  ],
 		  "trigger": "on_resolve"
@@ -69,7 +69,7 @@
 			{
 			  "target": "selected",
 			  "type": "random_discard",
-			  "value": 3.0
+			  "value": 3
 			}
 		  ],
 		  "trigger": "on_resolve"
@@ -89,7 +89,7 @@
 			"damage_type": "hp_loss",
 			"target": "self",
 			"type": "deal_damage",
-			"value": 2.0
+			"value": 2
 		  }
 		],
 		"method": "dice",
@@ -97,14 +97,14 @@
 		  {
 			"target": "self",
 			"type": "draw_cards",
-			"value": 2.0
+			"value": 2
 		  }
 		],
 		"success_values": [
-		  3.0,
-		  4.0,
-		  5.0,
-		  6.0
+		  3,
+		  4,
+		  5,
+		  6
 		]
 	  },
 	  "name": "『命运骰』",

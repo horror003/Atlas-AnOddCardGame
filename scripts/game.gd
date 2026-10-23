@@ -15,6 +15,43 @@ enum Mode { SELECT_CHAR, INTERSTITIAL, PLAY, SELECT_TARGET, RESPONSE, DISCARD, S
 
 const PHASE_NAMES := ["判定阶段", "摸牌阶段", "出牌阶段", "弃牌阶段"]
 
+# pending 上下文的 kind 取值（集中定义，避免字符串散落；写入时由 _set_pending 校验）
+const PENDING_CARD := "card"
+const PENDING_EVENT := "event"
+const PENDING_EVENT_SHOW := "event_show"
+const PENDING_SKILL := "skill"
+const PENDING_SKIP_RESPONSE := "skip_response"
+const PENDING_DAMAGE := "damage"
+const PENDING_DYING_SAVE := "dying_save"
+const PENDING_DISCARD_PICK := "discard_pick"
+const PENDING_SKILL_RETRIEVE := "skill_retrieve"
+const PENDING_FRACTAL := "fractal"
+const PENDING_SAGE := "sage"
+const PENDING_SAGE_TARGET := "sage_target"
+const PENDING_MUTUAL := "mutual"
+const PENDING_LEAP := "leap"
+const PENDING_EXILE_ASK := "exile_ask"
+const PENDING_EXILE_TARGET := "exile_target"
+const PENDING_MERCY := "mercy"
+const PENDING_OSC_FORM := "osc_form"
+const PENDING_OSC_TARGET := "osc_target"
+const PENDING_PEEP_HAND := "peep_hand"
+const PENDING_PEEP_TARGET := "peep_target"
+const PENDING_SAND_BURY_HAND := "sand_bury_hand"
+const PENDING_SAND_BURY_TARGET := "sand_bury_target"
+const PENDING_SAND_BURY_DISCARD := "sand_bury_discard"
+
+const PENDING_KINDS := [
+	PENDING_CARD, PENDING_EVENT, PENDING_EVENT_SHOW, PENDING_SKILL,
+	PENDING_SKIP_RESPONSE, PENDING_DAMAGE, PENDING_DYING_SAVE, PENDING_DISCARD_PICK,
+	PENDING_SKILL_RETRIEVE, PENDING_FRACTAL, PENDING_SAGE, PENDING_SAGE_TARGET,
+	PENDING_MUTUAL, PENDING_LEAP, PENDING_EXILE_ASK, PENDING_EXILE_TARGET,
+	PENDING_MERCY, PENDING_OSC_FORM, PENDING_OSC_TARGET,
+	PENDING_PEEP_HAND, PENDING_PEEP_TARGET,
+	PENDING_SAND_BURY_HAND, PENDING_SAND_BURY_TARGET, PENDING_SAND_BURY_DISCARD,
+	"judge_prompt",
+]
+
 # 状态 id -> 显示名（命名规范：状态效果用「」展示）
 const STATUS_NAMES := {
 	"skip": "「跳过」",
@@ -47,10 +84,12 @@ var pending: Dictionary = {}          # 待结算动作上下文（选目标 / �
 var damage_queue: Array[Dictionary] = []  # 伤害队列：一次攻击多类型=多次独立伤害（规则 5.1）
 var damage_return_to: String = "play" # 伤害队列清空后的回归点："play" / "judge"
 var winner: String = ""
+var dev_forced_judge: String = ""     # 开发者菜单：强制下一次判定结果（""=不干预 / success / fail / roll:N）
 
 var picked_char_ids: Array[String] = []  # 选人阶段已选角色 id（规则 4.1）
 var _card_instance_seq: int = 0          # 卡牌实例序号（同一张牌多段伤害只算一次）
 var _exile_done: Dictionary = {}         # 已处理过〖放逐〗询问的玩家下标
+var _dying_window_open: bool = false      # 当前是否已有「濒死救援」窗口处于打开状态（防重复开窗）
 
 func _init() -> void:
 	db = CardDB.new()
@@ -58,16 +97,37 @@ func _init() -> void:
 func _log(text: String) -> void:
 	message.emit(text)
 
+func _set_pending(kind: String, data: Dictionary = {}) -> void:
+	## 统一写入 pending 上下文，并校验 kind 已在 PENDING_KINDS 中声明
+	if not PENDING_KINDS.has(kind):
+		push_error("未声明的 pending kind：" + kind)
+	pending = data.duplicate()
+	pending["kind"] = kind
+
+func _pending_kind() -> String:
+	return String(pending.get("kind", ""))
+
 func _to_discard(card_id: String) -> void:
 	# 进入弃牌堆，并记录本回合弃牌（信息公开，规则 6.1）
 	discard_pile.append(card_id)
 	turn_discards.append(card_id)
+
+func _resolve_card_after_play(card_id: String) -> void:
+	## 出牌完成后的统一后置处理：根据卡牌类型决定进入弃牌堆还是直接移除
+	var card := db.get_card(card_id)
+	var ctype := String(card.get("type", ""))
+	if ctype == "special":
+		# 特殊牌打出后直接移除（不进入弃牌堆）
+		_log("%s 作为特殊牌被直接移除。" % String(card.get("name", card_id)))
+	else:
+		_to_discard(card_id)
 
 # ---------------- 游戏开始与选人（规则 4.1） ----------------
 
 func start_game() -> void:
 	# 选人阶段：玩家1先选，玩家2后选，不可重复
 	mode = Mode.SELECT_CHAR
+	_dying_window_open = false
 	_log("—— 选人阶段：请 玩家1 选择角色 ——")
 
 func ui_pick_character(char_id: String) -> void:
@@ -178,6 +238,10 @@ func _prepare_turn() -> void:
 		if stype == "active" or stype == "switch":
 			p.skill_uses_left[sid] = int(sk.get("max_uses_per_turn", 1))
 	p.attacks_used_this_turn = 0
+	p.caged_beast_used = false
+	# 回合开始：先检查觉醒与喧闹（在状态触发之前）
+	_check_noise_on_turn_start(p)
+	_check_star_brilliance(p)
 	# 触发回合开始状态效果（如「燃烧」）
 	_trigger_turn_start_statuses(p)
 	# 新回合：重置〖困兽〗与〖韵动〗的每回合计数，并刷新动态摸牌/存牌数值
@@ -260,7 +324,8 @@ func _ceil_pct(value: int, pct: int) -> int:
 	return int(ceil(float(value) * float(pct) / 100.0))
 
 func _lose_hp_direct(p: PlayerData, val: int, reason: String) -> void:
-	## 直接失去生命（不经过防御/装备），只标记濒死，由后续流程开救援窗口
+	## 直接失去生命（不经过防御/装备），只标记濒死；
+	## 救援窗口统一由 _ensure_dying_window() 在流程收尾处开启，避免中途打断结算
 	if val <= 0:
 		return
 	p.hp -= val
@@ -272,13 +337,99 @@ func _lose_hp_direct(p: PlayerData, val: int, reason: String) -> void:
 
 func _add_status_capped(p: PlayerData, status_id: String, layers: int, duration: int) -> int:
 	## 按 statuses.json 的 max_layers 限制叠层，返回实际叠加层数
-	var cap := int(db.statuses.get(status_id, {}).get("max_layers", 99))
+	var cap := int(db.get_status(status_id).get("max_layers", 99))
 	var cur := p.status_layer(status_id)
 	var add := clampi(layers, 0, cap - cur)
 	if add <= 0:
 		return 0
 	p.add_status(status_id, duration, add)
 	return add
+
+# ---------------- 开发者工具接口（仅调试构建的开发者菜单调用） ----------------
+
+func dev_set_turn(idx: int, ph: int) -> void:
+	## 强制设置当前回合玩家与阶段，并清空所有待结算上下文
+	current = clampi(idx, 0, players.size() - 1)
+	phase = clampi(ph, 0, Phase.DISCARD)
+	pending = {}
+	damage_queue.clear()
+	mode = Mode.PLAY
+	_log("【开发者】当前回合设为 %s，阶段设为 %s。" % [players[current].name, PHASE_NAMES[phase]])
+
+func dev_draw(p: PlayerData, n: int) -> void:
+	_draw_raw(p, n)
+	_log("【开发者】%s 摸了 %d 张牌。" % [p.name, n])
+
+func dev_grant_card(p: PlayerData, card_id: String, zone: String) -> void:
+	match zone:
+		"equipment":
+			p.equipment.append(card_id)
+		"reserve":
+			p.reserve.append(card_id)
+		"traps":
+			p.traps.append(card_id)
+		_:
+			p.hand.append(card_id)
+	_log("【开发者】将 %s 加入 %s 的%s。" % [String(db.get_card(card_id).get("name", card_id)), p.name, _dev_zone_name(zone)])
+
+func dev_remove_card(p: PlayerData, zone: String, index: int) -> void:
+	var arr := _dev_zone_array(p, zone)
+	if index < 0 or index >= arr.size():
+		return
+	var card_id: String = arr[index]
+	arr.remove_at(index)
+	_log("【开发者】从 %s 的%s移除了 %s。" % [p.name, _dev_zone_name(zone), String(db.get_card(card_id).get("name", card_id))])
+
+func dev_shuffle_draw() -> void:
+	draw_pile.shuffle()
+	_log("【开发者】抽牌堆已洗牌。")
+
+func dev_push_draw(card_id: String) -> void:
+	draw_pile.append(card_id)
+	_log("【开发者】将 %s 置入抽牌堆顶。" % String(db.get_card(card_id).get("name", card_id)))
+
+func dev_apply_stats(p: PlayerData, hp: int, max_hp: int, hand_limit: int, draw_limit: int, scab: int) -> void:
+	p.max_hp = maxi(1, max_hp)
+	p.hp = clampi(hp, 0, p.max_hp)
+	p.hand_limit = maxi(0, hand_limit)
+	p.draw_limit = maxi(1, draw_limit)
+	p.scab = maxi(0, scab)
+	_log("【开发者】写入 %s 数值：生命 %d/%d，存牌 %d，摸牌 %d，痂 %d。" % [p.name, p.hp, p.max_hp, p.hand_limit, p.draw_limit, p.scab])
+
+func dev_kill(idx: int) -> void:
+	var p := players[idx]
+	p.hp = 0
+	p.dying = false
+	p.dead = true
+	_log("【开发者】%s 被宣布死亡。" % p.name)
+	_check_deaths()
+
+func dev_win(idx: int) -> void:
+	winner = players[idx].name
+	mode = Mode.GAME_OVER
+	_log("【开发者】%s 被宣布胜利。" % players[idx].name)
+
+func _dev_zone_array(p: PlayerData, zone: String) -> Array[String]:
+	match zone:
+		"equipment":
+			return p.equipment
+		"reserve":
+			return p.reserve
+		"traps":
+			return p.traps
+		_:
+			return p.hand
+
+func _dev_zone_name(zone: String) -> String:
+	match zone:
+		"equipment":
+			return "装备栏"
+		"reserve":
+			return "预备区"
+		"traps":
+			return "陷阱区"
+		_:
+			return "手牌"
 
 func _on_card_played(p: PlayerData) -> void:
 	## 打出手牌时触发「恶化1」
@@ -314,11 +465,28 @@ func _enter_play_phase(p: PlayerData) -> void:
 	first_turn = false
 	p.rhythm_used = false
 	_log("—— %s 的出牌阶段 ——" % p.name)
+	# 先结算【窥视】等 play_start 触发的延时判定牌
+	_run_play_start_judge(p)
+	if mode != Mode.PLAY:
+		return  # 可能被 prompt_choice 中断
+	# 雷雨〖大气电压〗：出牌阶段开始时加一张【电击1】到手牌
+	if _has_skill(p, "skill_voltage"):
+		p.hand.append("special_electric_shock")
+		_log("%s 触发〖大气电压〗：一张【电击1】加入手牌。" % p.name)
+	# 古卢〖仁慈〗：出牌阶段开始时摸1张 + 二选一
+	if _has_skill(p, "skill_mercy"):
+		_draw_cards(p, 1)
+		_log("%s 触发〖仁慈〗：摸了 1 张牌。请选择一项：" % p.name)
+		_set_pending(PENDING_MERCY, {"options": ["lose_hp", "add_stop_sword"]})
+		mode = Mode.SKILL_PICK
+		return
 
 func ui_end_play_phase() -> void:
 	if mode != Mode.PLAY:
 		return
 	var p := players[current]
+	# 出牌阶段结束钩子：结算所有 trigger=on_play_end 的状态效果
+	_trigger_on_play_end_statuses(p)
 	phase = Phase.DISCARD
 	_refresh_limits(p)
 	# 弃牌阶段：手牌超过存牌数值则弃至上限（规则 4.2-4）
@@ -332,12 +500,12 @@ func _trigger_turn_start_statuses(p: PlayerData) -> void:
 	## 回合开始时触发所有 on_turn_start 状态效果，并减少持续时间
 	var to_trigger: Array[String] = []
 	for sid in p.status_ids():
-		var st: Dictionary = db.statuses.get(sid, {})
+		var st: Dictionary = db.get_status(sid)
 		if String(st.get("trigger", "")) == "on_turn_start":
 			to_trigger.append(sid)
 	# 先触发效果，再减持续
 	for sid in to_trigger:
-		var st: Dictionary = db.statuses.get(sid, {})
+		var st: Dictionary = db.get_status(sid)
 		var sname := String(st.get("name", sid))
 		var effects: Array = st.get("effects", [])
 		if not effects.is_empty():
@@ -348,9 +516,21 @@ func _trigger_turn_start_statuses(p: PlayerData) -> void:
 	var expired: Array[String] = []
 	for sid in p.status_ids():
 		if not p.tick_status(sid):
-			var st: Dictionary = db.statuses.get(sid, {})
+			var st: Dictionary = db.get_status(sid)
 			var sname := String(st.get("name", sid))
 			_log("%s 的%s已消失。" % [p.name, sname])
+
+func _trigger_on_play_end_statuses(p: PlayerData) -> void:
+	## 出牌阶段结束时触发所有 trigger=on_play_end 的状态（如「止戈」清空）
+	var to_clear: Array[String] = []
+	for sid in p.status_ids():
+		var st: Dictionary = db.get_status(sid)
+		if String(st.get("trigger", "")) == "on_play_end":
+			to_clear.append(sid)
+	for sid in to_clear:
+		var sname := String(db.get_status(sid).get("name", sid))
+		p.remove_status(sid)
+		_log("%s 出牌阶段结束，清空自身所有%s。" % [p.name, sname])
 
 func _end_turn() -> void:
 	var p := players[current]
@@ -379,7 +559,7 @@ func _draw_cards(p: PlayerData, n: int) -> void:
 		var sk_name := String(db.get_skill("skill_perceive").get("name", "skill_perceive"))
 		_log("%s 生效：%s 本次摸牌改为先摸 %d 张，再自选弃 %d 张。" % [sk_name, p.name, n * 2, n])
 		_draw_raw(p, n * 2)
-		pending = {"kind": "discard_pick", "target": players.find(p), "count": n, "picker": "self", "setup": _setup_drawing}
+		_set_pending(PENDING_DISCARD_PICK, {"target": players.find(p), "count": n, "picker": "self", "setup": _setup_drawing})
 		mode = Mode.DISCARD_PICK
 		_log("请选择 %d 张手牌弃置。" % n)
 		return
@@ -415,6 +595,10 @@ func _play_in_play_phase(card_index: int) -> void:
 	if card_index < 0 or card_index >= p.hand.size():
 		return
 	var card_id := p.hand[card_index]
+	# 李斯特〖喧闹〗：不能使用手牌中的【跳过】（锁定技强制触发）
+	if card_id == "skip" and _has_skill(p, "skill_noise"):
+		_log("〖喧闹〗：你不能使用手牌中的【跳过】，它会在回合开始被自动替换。")
+		return
 	var card := db.get_card(card_id)
 	var card_type := String(card.get("type", ""))
 	var card_name := String(card.get("name", card_id))
@@ -455,7 +639,7 @@ func _play_targeted_or_direct(p: PlayerData, card_index: int, card_id: String, c
 		var card_name := String(card.get("name", card_id))
 		_log("%s 打出了%s（目标：%s）。" % [p.name, card_name, _target_type_name(target_type)])
 		_play_card_from_hand(p, card_index)
-		_to_discard(card_id)
+		_resolve_card_after_play(card_id)
 		var ctx := {"card_id": card_id, "source_name": card_name, "instance": _card_instance_seq}
 		if _card_deals_damage(card) and _has_skill(p, "skill_rhythm") and not p.rhythm_used:
 			p.rhythm_used = true
@@ -475,13 +659,12 @@ func _play_targeted_or_direct(p: PlayerData, card_index: int, card_id: String, c
 		if candidates.size() == 1 and candidates[0] == current:
 			_resolve_played_card(p, card_index, card_id, card, current)
 			return
-		pending = {
-			"kind": "card",
+		_set_pending(PENDING_CARD, {
 			"source": current,
 			"card_id": card_id,
 			"hand_index": card_index,
 			"target_type": target_type,
-		}
+		})
 		mode = Mode.SELECT_TARGET
 		_log("请选择%s的目标。" % String(card["name"]))
 		return
@@ -547,7 +730,15 @@ func _apply_bloodline(p: PlayerData) -> void:
 
 func _resolve_played_card(p: PlayerData, card_index: int, card_id: String, card: Dictionary, target_idx: int) -> void:
 	_play_card_from_hand(p, card_index)
-	_to_discard(card_id)
+	var card_type := String(card.get("type", ""))
+	var has_zone := card.has("zone") and not String(card.get("zone", "")).is_empty()
+	# 进预备区的延时类牌（delayed_judge 或 special 带 zone）：不进弃牌堆，直接进目标预备区
+	if card_type == "delayed_judge" or has_zone:
+		players[target_idx].reserve.append(card_id)
+		_log("%s 进入 %s 的预备区，将在其判定/出牌阶段结算。" % [String(card.get("name", card_id)), players[target_idx].name])
+		_ensure_dying_window()  # 打出牌触发「恶化1」等自伤致死时仍需开救援窗口
+		return
+	_resolve_card_after_play(card_id)
 	var card_name := String(card.get("name", card_id))
 	if target_idx == current:
 		_log("%s 打出了%s。" % [p.name, card_name])
@@ -558,17 +749,10 @@ func _resolve_played_card(p: PlayerData, card_index: int, card_id: String, card:
 		p.attacks_used_this_turn += 1
 		if _has_skill(p, "skill_bloodline"):
 			_apply_bloodline(p)
-	var card_type := String(card.get("type", ""))
-	# 延时判定牌：进入目标预备区而非弃牌堆结算
-	if card_type == "delayed_judge":
-		discard_pile.erase(card_id)
-		turn_discards.erase(card_id)
-		players[target_idx].reserve.append(card_id)
-		_log("%s 进入 %s 的预备区，将在其判定阶段结算。" % [card_name, players[target_idx].name])
-		return
 	# 【跳过】特殊结算：解除或进入抵消响应窗口
 	if card_id == "skip":
 		_resolve_skip(p, target_idx)
+		_ensure_dying_window()  # 「恶化1」等自伤致死时优先开救援窗口
 		return
 	var ctx := {"card_id": card_id, "source_name": card_name, "instance": _card_instance_seq}
 	# 〖韵动〗：每个出牌阶段第一张伤害类型牌的每段伤害 ×2
@@ -576,7 +760,27 @@ func _resolve_played_card(p: PlayerData, card_index: int, card_id: String, card:
 		p.rhythm_used = true
 		ctx["rhythm"] = true
 		_log("%s 触发〖韵动〗：%s 的每段伤害提升100%%。" % [p.name, card_name])
-	_run_actions(current, card.get("effects", []), target_idx, ctx)
+	# 〖扬沙〗：普攻默认改成 2 次 2 点物理伤害（替代原 data_driven 的 basic_attack 3点）
+	# 必须走 _deal_damage 让困兽/方舟之剑/奋击/韵动/止戈/失明等全部正常生效
+	if card_id == "basic_attack" and _has_skill(p, "skill_sand_wind"):
+		var dmg_val := 2
+		if ctx.has("rhythm"):
+			dmg_val *= 2
+		_deal_damage(current, target_idx, dmg_val, "physical", "【普通攻击】（扬沙）", card_id)
+		_deal_damage(current, target_idx, dmg_val, "physical", "【普通攻击】（扬沙）", card_id)
+		_log("%s 触发〖扬沙〗：【普通攻击】改为 2×%d 点物理伤害。" % [p.name, dmg_val])
+		# 光明之眼：第一张普攻 → 目标失明
+		if _has_skill(p, "skill_light_eye") and p.attacks_used_this_turn == 1:
+			var c := _add_status_capped(players[target_idx], "blind", 1, -1)
+			if c > 0:
+				_log("%s 触发〖光明之眼〗：%s 获得一层「失明」。" % [p.name, players[target_idx].name])
+	else:
+		_run_actions(current, card.get("effects", []), target_idx, ctx)
+		# 〖光明之眼〗（非扬沙情况）
+		if card_id == "basic_attack" and _has_skill(p, "skill_light_eye") and p.attacks_used_this_turn == 1:
+			var c := _add_status_capped(players[target_idx], "blind", 1, -1)
+			if c > 0:
+				_log("%s 触发〖光明之眼〗：%s 获得一层「失明」。" % [p.name, players[target_idx].name])
 	# 〖千钧之数〗：普攻附加一次预备区防御点数和×30%（向下取整）的灵魂伤害
 	if card_id == "basic_attack" and _has_skill(p, "skill_thousand_weight"):
 		var extra := int(floor(float(_reserve_defense_total(p)) * 0.3))
@@ -604,11 +808,10 @@ func _resolve_skip(src_p: PlayerData, target_idx: int) -> void:
 		_log("%s 的「跳过」被%s解除了。" % [target.name, src_p.name])
 		return
 	# 进入抵消响应窗口：目标（或队友）可打出另一张【跳过】抵消
-	pending = {
-		"kind": "skip_response",
+	_set_pending(PENDING_SKIP_RESPONSE, {
 		"source": current,
 		"defender": target_idx,
-	}
+	})
 	mode = Mode.RESPONSE
 	_log("%s 即将获得「跳过」，可打出另一张【跳过】抵消。" % target.name)
 
@@ -618,7 +821,7 @@ func ui_select_target(target_idx: int) -> void:
 	if not target_candidates_now().has(target_idx):
 		return
 	var kind := String(pending.get("kind", ""))
-	if kind == "card":
+	if kind == PENDING_CARD:
 		var p := players[current]
 		var card_id := String(pending["card_id"])
 		var hand_index := int(pending["hand_index"])
@@ -626,7 +829,7 @@ func ui_select_target(target_idx: int) -> void:
 		pending = {}
 		mode = Mode.PLAY
 		_resolve_played_card(p, hand_index, card_id, card, target_idx)
-	elif kind == "event":
+	elif kind == PENDING_EVENT:
 		var event := db.get_event(String(pending["event_id"]))
 		var src := int(pending["source"])
 		pending = {}
@@ -634,7 +837,7 @@ func ui_select_target(target_idx: int) -> void:
 		_log("事件目标：%s。" % players[target_idx].name)
 		_run_actions(src, event.get("effects", []), target_idx, {"source_name": String(event["name"])})
 		_kick_damage()
-	elif kind == "skill":
+	elif kind == PENDING_SKILL:
 		var skill := db.get_skill(String(pending["skill_id"]))
 		var src := int(pending["source"])
 		pending = {}
@@ -643,7 +846,46 @@ func ui_select_target(target_idx: int) -> void:
 		_log("%s 发动了%s，目标：%s。" % [players[src].name, String(skill["name"]), players[target_idx].name])
 		_run_actions(src, skill.get("effects", []), target_idx, {"source_name": String(skill["name"])})
 		_kick_damage()
-	elif kind == "sage_target":
+	elif kind == PENDING_OSC_TARGET:
+		# 振荡①：pick 层已把要弃的牌从区域移除暂存进 pending，这里确认后才执行副作用
+		var src := int(pending.get("source", current))
+		var skill_id := String(pending.get("skill_id", "skill_oscillation"))
+		var first_cid := String(pending.get("first_card", ""))
+		var second_cid := String(pending.get("second_card", ""))
+		var p := players[src]
+		pending = {}
+		mode = Mode.PLAY
+		p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
+		p.oscillation_mode = 1  # 下次强制形态②
+		if not first_cid.is_empty():
+			_to_discard(first_cid)
+		if not second_cid.is_empty():
+			_to_discard(second_cid)
+		var card_names: Array[String] = []
+		for cid in [first_cid, second_cid]:
+			if not cid.is_empty():
+				card_names.append(String(db.get_card(cid).get("name", cid)))
+		var _joined := ""
+		for _n in card_names:
+			if _joined != "": _joined += "、"
+			_joined += _n
+		_log("%s 发动〖振荡〗形态①：弃 [%s] → 对%s视作使用【跳过】。下次必形态②。" % [p.name, _joined, players[target_idx].name])
+		_resolve_skip(p, target_idx)
+		_kick_damage()
+	elif kind == PENDING_PEEP_TARGET:
+		# 窥伺之眼：把手牌视作【窥视】置入目标预备区（所有副作用在确认后执行）
+		var p := players[current]
+		var cid := String(pending.get("peep_card", ""))
+		var skill_id := String(pending.get("skill_id", "skill_peep_eye"))
+		pending = {}
+		mode = Mode.PLAY
+		p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
+		if cid != "":
+			_to_discard(cid)
+		players[target_idx].reserve.append("special_peek")
+		_log("%s 发动〖窥伺之眼〗：弃 %s → 【窥视】进入%s的预备区。" % [p.name, String(db.get_card(cid).get("name", cid)), players[target_idx].name])
+		_kick_damage()
+	elif kind == PENDING_SAGE_TARGET:
 		var src := int(pending["source"])
 		var p := players[src]
 		var sid := String(pending.get("sage_status", "vulnerable_1"))
@@ -659,10 +901,10 @@ func ui_select_target(target_idx: int) -> void:
 		_log("%s 发动〖贤者之书〗，丢弃了 %s。" % [p.name, String(db.get_card(discarded).get("name", discarded))])
 		p.skill_uses_left["skill_sage_book"] = int(p.skill_uses_left.get("skill_sage_book", 1)) - 1
 		var applied := _add_status_capped(players[target_idx], sid, 2, -1)
-		var sname := String(db.statuses.get(sid, {}).get("name", sid))
+		var sname := String(db.get_status(sid).get("name", sid))
 		p.sage_mode = (form + 1) % 3
 		_log("%s 对 %s 施加 %d 层%s，〖贤者之书〗转为形态 %s。" % [p.name, players[target_idx].name, applied, sname, ["①", "②", "③"][p.sage_mode]])
-	elif kind == "mutual":
+	elif kind == PENDING_MUTUAL:
 		var src := int(pending["source"])
 		var p := players[src]
 		if players[target_idx].status_layer("pale") <= 0:
@@ -684,7 +926,7 @@ func ui_select_target(target_idx: int) -> void:
 			_log("并移除 %d 层「猩红」，追加 %d 点灵魂伤害。" % [y, y])
 			_deal_damage(src, target_idx, y, "soul", "〖相生相灭〗")
 		_kick_damage()
-	elif kind == "exile_target":
+	elif kind == PENDING_EXILE_TARGET:
 		var src := int(pending["source"])
 		var tp := players[target_idx]
 		pending = {}
@@ -712,15 +954,36 @@ func ui_cancel_target() -> void:
 	if mode != Mode.SELECT_TARGET:
 		return
 	var kind := String(pending.get("kind", ""))
-	if kind == "card" or kind == "mutual" or kind == "sage_target" or kind == "skill":
+	if kind == PENDING_CARD or kind == PENDING_MUTUAL or kind == PENDING_SAGE_TARGET or kind == PENDING_SKILL:
 		pending = {}
 		mode = Mode.PLAY
 		_log("取消了出牌。")
-	elif kind == "event":
+	elif kind == PENDING_PEEP_TARGET:
+		# 恢复被 take_zone_card 移除的手牌
+		var peep_cid := String(pending.get("peep_card", ""))
+		var p := players[current]
+		pending = {}
+		mode = Mode.PLAY
+		if not peep_cid.is_empty():
+			p.hand.append(peep_cid)
+		_log("取消了〖窥伺之眼〗，手牌已恢复。")
+	elif kind == PENDING_OSC_TARGET:
+		# 恢复两张被 take_zone_card 从手牌移除的牌（副作用未执行所以不需要回滚次数）
+		var first_cid := String(pending.get("first_card", ""))
+		var second_cid := String(pending.get("second_card", ""))
+		var p2 := players[current]
+		pending = {}
+		mode = Mode.PLAY
+		if not first_cid.is_empty():
+			p2.hand.append(first_cid)
+		if not second_cid.is_empty():
+			p2.hand.append(second_cid)
+		_log("取消了〖振荡〗形态①选目标，手牌已恢复，不消耗次数。")
+	elif kind == PENDING_EVENT:
 		pending = {}
 		mode = Mode.PLAY
 		_log("放弃了事件结算。")
-	elif kind == "exile_target":
+	elif kind == PENDING_EXILE_TARGET:
 		var src := int(pending.get("source", current))
 		pending = {}
 		mode = Mode.PLAY
@@ -732,14 +995,14 @@ func target_candidates_now() -> Array[int]:
 	if mode != Mode.SELECT_TARGET:
 		return []
 	var kind := String(pending.get("kind", ""))
-	if kind == "exile_target":
+	if kind == PENDING_EXILE_TARGET:
 		var src := int(pending.get("source", current))
 		var res: Array[int] = []
 		for i in players.size():
 			if i != src and not players[i].dead:
 				res.append(i)
 		return res
-	if kind == "mutual":
+	if kind == PENDING_MUTUAL:
 		var src2 := int(pending.get("source", current))
 		var res2: Array[int] = []
 		for i in players.size():
@@ -809,7 +1072,7 @@ func _execute_action(src_idx: int, action: Dictionary, target_idx: int, ctx: Dic
 			var sid := String(action.get("status_id", ""))
 			var dur := int(action.get("duration", -1))
 			players[t].add_status(sid, dur, int(action.get("layers", 1)))
-			var sname := String(db.statuses.get(sid, {}).get("name", sid))
+			var sname := String(db.get_status(sid).get("name", sid))
 			if dur > 0:
 				_log("%s 获得%s（持续 %d 回合）。" % [players[t].name, sname, dur])
 			else:
@@ -837,33 +1100,35 @@ func _execute_action(src_idx: int, action: Dictionary, target_idx: int, ctx: Dic
 			if p.hand.is_empty():
 				_log("%s 没有手牌可弃。" % p.name)
 			else:
-				var r := randi() % p.hand.size()
-				var cid := p.hand[r]
-				p.hand.remove_at(r)
-				_to_discard(cid)
-				_log("随机弃置了 %s 的 1 张手牌（%s）。" % [p.name, String(db.get_card(cid)["name"])])
+				var count := int(action.get("value", 1))
+				var actual := mini(count, p.hand.size())
+				var names: Array[String] = []
+				for _i in actual:
+					var r := randi() % p.hand.size()
+					var cid := p.hand[r]
+					p.hand.remove_at(r)
+					_to_discard(cid)
+					names.append(String(db.get_card(cid)["name"]))
+				var joined := ""
+				for _n in names:
+					if joined != "":
+						joined += "、"
+					joined += _n
+				_log("随机弃置了 %s 的 %d 张手牌（%s）。" % [p.name, actual, joined])
 		"discard_target_pick":
 			var p := players[t]
 			if p.hand.is_empty():
 				_log("%s 没有手牌可弃。" % p.name)
 			else:
 				var count := int(action.get("value", 1))
-				pending = {"kind": "discard_pick", "target": t, "count": count, "picker": "actor", "source": src_idx}
+				_set_pending(PENDING_DISCARD_PICK, {"target": t, "count": count, "picker": "actor", "source": src_idx})
 				mode = Mode.DISCARD_PICK
 				_log("请选择 %s 的 %d 张手牌弃置。" % [p.name, count])
 		"trigger_event":
 			_trigger_event(src_idx)
 		"lose_hp":
-			# 失去生命：不受防御/装备影响，直接扣血
-			var p := players[t]
-			var val := int(action.get("value", 1))
-			p.hp -= val
-			_log("%s 失去 %d 点生命（剩余 %d）。" % [p.name, val, p.hp])
-			if p.hp <= 0 and not p.dying and not p.dead:
-				p.hp = 0
-				p.dying = true
-				_log("%s 进入「濒死」状态！" % p.name)
-				_open_dying_window(t)
+			# 失去生命：不受防御/装备影响，直接扣血（濒死窗口由流程收尾统一开启）
+			_lose_hp_direct(players[t], int(action.get("value", 1)), "失去生命")
 		_:
 			push_warning("未实现的动作类型：" + type)
 
@@ -893,7 +1158,7 @@ func _deal_damage(src_idx: int, target_idx: int, base_amount: int, damage_type: 
 	if card_id == "basic_attack" and src.has_status("attack_up_1"):
 		amount += 1
 		src.remove_status("attack_up_1")
-		_log("%s 生效：本次【普通攻击】伤害 +1。" % String(db.statuses.get("attack_up_1", {}).get("name", "attack_up_1")))
+		_log("%s 生效：本次【普通攻击】伤害 +1。" % String(db.get_status("attack_up_1").get("name", "attack_up_1")))
 	# 通用被动系统：装备/属性效果统一结算
 	amount = _apply_passives_outgoing(src, target, card_id, damage_type, amount, src_idx)
 	amount = _apply_passives_incoming(src, target, card_id, damage_type, amount, src_idx)
@@ -902,6 +1167,16 @@ func _deal_damage(src_idx: int, target_idx: int, base_amount: int, damage_type: 
 		src.consume_layer("cold_1")
 		amount -= 1
 		_log("%s 因「寒冷1」本次伤害 -1（剩余 %d 层）。" % [src.name, src.status_layer("cold_1")])
+	# 「失明」：造成伤害时 -100%，触发后移除一层
+	if src.has_status("blind"):
+		src.consume_layer("blind")
+		amount = 0
+		_log("%s 因「失明」本次伤害归零（剩余 %d 层）。" % [src.name, src.status_layer("blind")])
+	# 「止戈」：造成伤害时 -1（加算），触发后不移除（出牌阶段结束统一清）
+	if src.has_status("stop_sword"):
+		var n := src.status_layer("stop_sword")
+		amount -= n
+		_log("%s 因「止戈」本次伤害 -%d。" % [src.name, n])
 	# 3. 乘算
 	if not is_equal_approx(multiplier, 1.0):
 		amount = int(floor(float(amount) * multiplier))
@@ -1045,6 +1320,8 @@ func _resolve_effect_value(effect: Dictionary, src: PlayerData, target: PlayerDa
 
 func _kick_damage() -> void:
 	if damage_queue.is_empty():
+		# 无伤害待结算，但仍可能有技能/状态自伤导致的濒死，需要开救援窗口
+		_ensure_dying_window()
 		return
 	if mode == Mode.RESPONSE:
 		return
@@ -1057,15 +1334,14 @@ func _process_damage_queue() -> void:
 		var dtype := String(d["damage_type"])
 		# 规则 5.1：物理与法术伤害可被【防御】响应；灵魂伤害与失去生命不能被响应
 		if dtype == "physical" or dtype == "magical":
-			pending = {
-				"kind": "damage",
+			_set_pending(PENDING_DAMAGE, {
 				"source": int(d["source"]),
 				"defender": int(d["defender"]),
 				"amount": int(d["amount"]),
 				"blocked": 0,
 				"damage_type": dtype,
 				"source_name": String(d["source_name"]),
-			}
+			})
 			mode = Mode.RESPONSE
 			_log("等待 %s 响应……" % players[int(d["defender"])].name)
 			return
@@ -1076,10 +1352,8 @@ func _process_damage_queue() -> void:
 
 func _after_damage_queue() -> void:
 	# 规则 5.3：有「濒死」角色时先开救援窗口（可按座位顺序用食物救），结算完毕仍未脱离才宣布死亡
-	for i in players.size():
-		if players[i].dying and not players[i].dead:
-			_open_dying_window(i)
-			return
+	if _ensure_dying_window():
+		return
 	_check_deaths()
 	if mode == Mode.GAME_OVER:
 		return
@@ -1088,6 +1362,16 @@ func _after_damage_queue() -> void:
 	else:
 		mode = Mode.PLAY
 
+# 存在濒死角色且当前没有已打开的救援窗口时开窗；返回是否新开窗
+func _ensure_dying_window() -> bool:
+	if _dying_window_open or mode == Mode.GAME_OVER:
+		return false
+	for i in players.size():
+		if players[i].dying and not players[i].dead:
+			_open_dying_window(i)
+			return true
+	return false
+
 # 濒死救援窗口：从濒死者开始按座位顺序，各玩家可打出食物（视为濒死角色使用，规则 3.3）
 func _open_dying_window(dying_idx: int) -> void:
 	var rescuers: Array[int] = []
@@ -1095,12 +1379,14 @@ func _open_dying_window(dying_idx: int) -> void:
 		var i := (dying_idx + k) % players.size()
 		if not players[i].dead:
 			rescuers.append(i)
-	pending = {"kind": "dying_save", "dying_player": dying_idx, "rescuers": rescuers}
+	_dying_window_open = true
+	_set_pending(PENDING_DYING_SAVE, {"dying_player": dying_idx, "rescuers": rescuers})
 	mode = Mode.RESPONSE
 	_log("%s 处于「濒死」！按座位顺序询问救援：可打出食物牌（视为濒死角色使用）。" % players[dying_idx].name)
 
 # 救援结束仍濒死：宣布死亡（规则 5.3）
 func _finalize_dying(idx: int) -> void:
+	_dying_window_open = false
 	var p := players[idx]
 	if not p.dying or p.dead:
 		_check_deaths()
@@ -1118,7 +1404,7 @@ func _finalize_dying(idx: int) -> void:
 			if i != idx and not players[i].dead:
 				has_other = true
 		if has_other:
-			pending = {"kind": "exile_ask", "dying": idx, "options": ["yes", "no"]}
+			_set_pending(PENDING_EXILE_ASK, {"dying": idx, "options": ["yes", "no"]})
 			mode = Mode.SKILL_PICK
 			_log("%s 可以发动限定技〖放逐〗：清空一名其他玩家的所有区域。" % p.name)
 			return
@@ -1185,6 +1471,11 @@ func _settle_damage(d: Dictionary, blocked: int) -> void:
 				var c3 := _add_status_capped(src_p, "dark", 1, -1)
 				if c3 > 0:
 					_log("%s 获得「玄暗」（%d 层）。" % [src_p.name, src_p.status_layer("dark")])
+			# 古卢〖止戈〗：受到其他玩家造成的【普通攻击】伤害后，对来源施加一层「止戈」
+			if _has_skill(defender, "skill_stop_sword_skill") and String(d.get("card_id", "")) == "basic_attack":
+				var c4 := _add_status_capped(src_p, "stop_sword", 1, -1)
+				if c4 > 0:
+					_log("%s 触发〖止戈〗：%s 获得一层「止戈」（%d 层）。" % [defender.name, src_p.name, src_p.status_layer("stop_sword")])
 		# 〖守御〗：受到特殊攻击伤害时进行一次摸牌判定，非基础牌则反击2点物理，单张牌只触发一次
 		if _has_skill(defender, "skill_guardian") and String(d.get("card_type", "")) == "special_attack" and not self_hit:
 			var inst := int(d.get("instance", -1))
@@ -1211,13 +1502,13 @@ func _play_response_card(card_index: int) -> void:
 	if pending.is_empty():
 		return
 	var kind := String(pending.get("kind", ""))
-	if kind == "damage" or kind == "skip_response":
+	if kind == PENDING_DAMAGE or kind == PENDING_SKIP_RESPONSE:
 		var defender := players[int(pending["defender"])]
 		if card_index < 0 or card_index >= defender.hand.size():
 			return
 		var card_id := defender.hand[card_index]
 		var card := db.get_card(card_id)
-		if kind == "damage":
+		if kind == PENDING_DAMAGE:
 			# 规则 5.2：一张防御牌无论点数多少，只能格挡一次伤害实例
 			if not bool(card.get("is_defense", false)):
 				_log("响应窗口内只能打出【防御】类牌。")
@@ -1237,7 +1528,7 @@ func _play_response_card(card_index: int) -> void:
 			_log("%s 打出【跳过】，抵消了「跳过」效果。" % defender.name)
 			pending = {}
 			mode = Mode.PLAY
-	elif kind == "dying_save":
+	elif kind == PENDING_DYING_SAVE:
 		# 濒死救援：当前被询问的玩家打出食物牌，视为濒死角色使用（规则 3.3）
 		var rescuers: Array = pending.get("rescuers", [])
 		if rescuers.is_empty():
@@ -1258,12 +1549,13 @@ func _play_response_card(card_index: int) -> void:
 		_run_actions(rescuer_idx, fcard.get("effects", []), dying_idx, {"card_id": fcid, "source_name": String(fcard.get("name", fcid))})
 		# 救活则关闭窗口回归流程；未救活可继续出食物或放弃
 		if not players[dying_idx].dying:
+			_dying_window_open = false
 			pending = {}
 			_after_damage_queue()
 
 # 响应时使用预备区中的防御牌：不需要执行「打出」动作（规则 5.2）
 func ui_play_reserve(reserve_index: int) -> void:
-	if mode != Mode.RESPONSE or String(pending.get("kind", "")) != "damage":
+	if mode != Mode.RESPONSE or String(pending.get("kind", "")) != PENDING_DAMAGE:
 		return
 	var defender := players[int(pending["defender"])]
 	if reserve_index < 0 or reserve_index >= defender.reserve.size():
@@ -1284,7 +1576,7 @@ func ui_end_response() -> void:
 	if mode != Mode.RESPONSE:
 		return
 	var kind := String(pending.get("kind", ""))
-	if kind == "damage":
+	if kind == PENDING_DAMAGE:
 		if damage_queue.is_empty():
 			pending = {}
 			mode = Mode.PLAY
@@ -1295,13 +1587,13 @@ func ui_end_response() -> void:
 		pending = {}
 		_settle_damage(d, blocked)
 		_process_damage_queue()
-	elif kind == "skip_response":
+	elif kind == PENDING_SKIP_RESPONSE:
 		var t := players[int(pending["defender"])]
 		t.add_status("skip")
 		_log("%s 获得「跳过」。" % t.name)
 		pending = {}
 		mode = Mode.PLAY
-	elif kind == "dying_save":
+	elif kind == PENDING_DYING_SAVE:
 		# 当前被询问的玩家放弃救援 → 询问下一位；无人再救则宣布死亡（规则 5.3）
 		var rescuers: Array = pending.get("rescuers", [])
 		var dying_idx := int(pending["dying_player"])
@@ -1317,17 +1609,24 @@ func ui_end_response() -> void:
 # ---------------- 判定阶段与延时判定牌（规则 4.2-1 / 4.3） ----------------
 
 func _run_judge_phase(p: PlayerData) -> void:
-	# 结算预备区中所有延时判定牌
+	# 结算预备区中所有在「判定阶段」触发的延时判定牌
 	var judges: Array[String] = []
 	for cid in p.reserve:
-		if String(db.get_card(cid).get("type", "")) == "delayed_judge":
+		var card := db.get_card(cid)
+		var ct := String(card.get("type", ""))
+		if ct == "delayed_judge":
 			judges.append(cid)
+		elif ct == "special":
+			var jdict: Dictionary = card.get("judge", {})
+			if String(jdict.get("trigger_phase", "")) != "play_start":
+				# 普通判定阶段触发的 special 延时牌（如富兰克林之钥：回合开始）
+				judges.append(cid)
 	if judges.is_empty():
 		return
 	_log("—— %s 的判定阶段 ——" % p.name)
 	for cid in judges:
 		p.reserve.erase(cid)
-		_to_discard(cid)
+		_resolve_card_after_play(cid)
 		var card := db.get_card(cid)
 		_log("结算延时判定牌%s。" % String(card.get("name", cid)))
 		var owner_idx := players.find(p)
@@ -1335,34 +1634,114 @@ func _run_judge_phase(p: PlayerData) -> void:
 		if mode == Mode.GAME_OVER:
 			return
 
-# 三种判定方式：摸牌判定 / 排中判定 / 骰子判定（规则 4.3）
+# 结算预备区中「出牌阶段开始」触发的 special 延时牌（如【窥视】）
+func _run_play_start_judge(p: PlayerData) -> void:
+	var judges: Array[String] = []
+	for cid in p.reserve:
+		var card := db.get_card(cid)
+		if String(card.get("type", "")) == "special":
+			var jdict: Dictionary = card.get("judge", {})
+			if String(jdict.get("trigger_phase", "")) == "play_start":
+				judges.append(cid)
+	if judges.is_empty():
+		return
+	for cid in judges:
+		p.reserve.erase(cid)
+		_resolve_card_after_play(cid)
+		var card := db.get_card(cid)
+		_log("出牌阶段开始，结算%s。" % String(card.get("name", cid)))
+		var owner_idx := players.find(p)
+		_run_judge(card.get("judge", {}), owner_idx, owner_idx, String(card.get("name", cid)))
+		if mode == Mode.GAME_OVER:
+			return
+
+# 三种判定方式：摸牌判定 / 排中判定 / 骰子判定（规则 4.3）+ multi_judge 多段
 func _run_judge(j: Dictionary, src_idx: int, target_idx: int, source_name: String) -> void:
 	var method := String(j.get("method", "coin"))
-	var success := false
+	var multi: Dictionary = j.get("multi_judge", {}) if j.has("multi_judge") else {}
+	if not multi.is_empty():
+		# 多段判定：翻 count 次，success 即中断
+		var count := int(multi.get("count", 2))
+		var interrupt := bool(multi.get("interrupt_on_success", false))
+		var all_failed := true
+		for step in range(count):
+			var success := _run_single_judge_roll(method, j)
+			if success:
+				all_failed = false
+				if interrupt:
+					break
+		if all_failed:
+			_log("%s 两次判定均失败，执行失败效果。" % source_name)
+			_execute_judge_actions(j.get("fail_actions", []), src_idx, target_idx, source_name)
+		else:
+			_log("%s 判定过程中有一次成功，效果不触发。" % source_name)
+		return
+	var success := _run_single_judge_roll(method, j)
+	var actions: Array = j.get("success_actions", []) if success else j.get("fail_actions", [])
+	_execute_judge_actions(actions, src_idx, target_idx, source_name)
+
+func _run_single_judge_roll(method: String, j: Dictionary) -> bool:
+	# 开发者菜单：强制本次判定结果
+	if dev_forced_judge != "":
+		var forced := dev_forced_judge
+		dev_forced_judge = ""
+		if forced == "success":
+			_log("【开发者】本次判定被强制为成功。")
+			return true
+		if forced == "fail":
+			_log("【开发者】本次判定被强制为失败。")
+			return false
+		if forced.begins_with("roll:"):
+			var roll := clampi(int(forced.substr(5)), 1, 6)
+			var need: Array = j.get("success_values", [])
+			var ok := need.has(roll)
+			_log("【开发者】骰子判定被强制掷出 %d 点 → %s。" % [roll, "成功" if ok else "失败"])
+			return ok
 	match method:
 		"draw":
-			# 摸牌判定：翻抽牌堆顶一张，按牌面属性判定
 			var jid := _judge_draw_card()
 			if jid == "":
 				_log("摸牌判定失败：抽牌堆为空。")
-			else:
-				var jc := db.get_card(jid)
-				var cond := String(j.get("condition", ""))
-				success = _judge_card_match(jc, cond)
-				_log("摸牌判定：翻开%s（条件：%s）→ %s。" % [String(jc.get("name", jid)), _judge_condition_name(cond), "成功" if success else "失败"])
-				_to_discard(jid)
+				return false
+			var jc := db.get_card(jid)
+			var cond := String(j.get("condition", ""))
+			var s := _judge_card_match(jc, cond)
+			_log("摸牌判定：翻开%s（条件：%s）→ %s。" % [String(jc.get("name", jid)), _judge_condition_name(cond), "成功" if s else "失败"])
+			_to_discard(jid)
+			return s
 		"coin":
-			# 排中判定：50% 概率结果 A 或结果 B
-			success = randi() % 2 == 0
-			_log("排中判定：%s。" % ("正面（成功）" if success else "反面（失败）"))
+			var s := randi() % 2 == 0
+			_log("排中判定：%s。" % ("正面（成功）" if s else "反面（失败）"))
+			return s
 		"dice":
-			# 骰子判定：掷骰子，按点数执行对应结果
 			var roll := 1 + randi() % 6
 			var need: Array = j.get("success_values", [])
-			success = need.has(roll)
-			_log("骰子判定：掷出 %d 点（成功点：%s）→ %s。" % [roll, str(need), "成功" if success else "失败"])
-	var actions: Array = j.get("success_actions", []) if success else j.get("fail_actions", [])
+			var s := need.has(roll)
+			_log("骰子判定：掷出 %d 点（成功点：%s）→ %s。" % [roll, str(need), "成功" if s else "失败"])
+			return s
+	return false
+
+func _execute_judge_actions(actions: Array, src_idx: int, target_idx: int, source_name: String) -> void:
 	for action in actions:
+		var atype := String(action.get("type", ""))
+		if atype == "conditional_deal_damage":
+			# 条件扣血：目标带有指定状态才生效
+			var cond_status := String(action.get("condition_status", ""))
+			var t := players[target_idx]
+			if not t.has_status(cond_status):
+				_log("条件未满足（%s 不带「%s」），跳过。" % [t.name, cond_status])
+				continue
+		if atype == "prompt_choice":
+			# 选择式判定失败：让玩家在多个动作里选一个
+			var choices: Array = action.get("prompt_choice", [])
+			if choices.size() >= 2:
+				var idx_options: Array = []
+				for i in choices.size():
+					idx_options.append(str(i))
+				_set_pending("judge_prompt", {"source": src_idx, "target": target_idx, "choices": choices, "options": idx_options, "source_name": source_name})
+				mode = Mode.SKILL_PICK
+				_log("%s 判定失败，请选择一项。" % source_name)
+				return  # 等 pick
 		_execute_action(src_idx, action, target_idx, {"source_name": source_name})
 
 func _judge_draw_card() -> String:
@@ -1481,196 +1860,565 @@ func _take_zone_card(p: PlayerData, token: String, remove: bool = true) -> Strin
 		arr.remove_at(i)
 	return cid
 
+# 主动技能特判：技能 id -> 处理函数（返回 true 表示已处理；false 继续走通用流程）
+const SKILL_SPECIAL_HANDLERS := {
+	"skill_fractal": "_skill_fractal",
+	"skill_sage_book": "_skill_sage_book",
+	"skill_mutual": "_skill_mutual",
+	"skill_leap_faith": "_skill_leap_faith",
+	"skill_false_step": "_skill_false_step",
+	"skill_lightning_rod": "_skill_lightning_rod",
+	"skill_tip_discharge": "_skill_tip_discharge",
+	"skill_peep_eye": "_skill_peep_eye",
+	"skill_oscillation": "_skill_oscillation",
+	"skill_sand_burial": "_skill_sand_burial",
+}
+
+# 技能选牌处理：pending kind -> 处理函数
+const SKILL_PICK_HANDLERS := {
+	PENDING_SKILL_RETRIEVE: "_pick_retrieve",
+	PENDING_FRACTAL: "_pick_fractal",
+	PENDING_SAGE: "_pick_sage",
+	PENDING_LEAP: "_pick_leap",
+	PENDING_EXILE_ASK: "_pick_exile_ask",
+	PENDING_MERCY: "_pick_mercy",
+	PENDING_OSC_FORM: "_pick_osc_form",
+	PENDING_PEEP_HAND: "_pick_peep_hand",
+	PENDING_SAND_BURY_HAND: "_pick_sand_bury_hand",
+	"judge_prompt": "_pick_judge_prompt",
+}
+
 func ui_use_skill(skill_id: String) -> void:
 	if mode != Mode.PLAY:
 		return
 	var p := players[current]
 	if not p.skill_ids.has(skill_id):
 		return
-	if int(p.skill_uses_left.get(skill_id, 0)) <= 0:
-		_log("本回合该技能次数已用完。")
-		return
 	var skill := db.get_skill(skill_id)
-	# 〖分形几何〗：将一张【普通攻击】视作【防御2】布置到预备区
-	if skill_id == "skill_fractal":
-		var fopts: Array[String] = []
-		for i in p.hand.size():
-			if p.hand[i] == "basic_attack":
-				fopts.append("hand:%d" % i)
-		if fopts.is_empty():
-			_log("手牌中没有【普通攻击】，〖分形几何〗发动失败。")
+	var stype := String(skill.get("skill_type", ""))
+	# 限定技：每局一次，检查 limited_used
+	if stype == "limited":
+		if bool(p.limited_used.get(skill_id, false)):
+			_log("〖引雷〗已在本局发动过。")
 			return
-		pending = {"kind": "fractal", "skill_id": skill_id, "options": fopts}
-		mode = Mode.SKILL_PICK
-		_log("请选择一张【普通攻击】转化为【防御2】。")
+	# 觉醒技能（沙葬）：未觉醒时不可用
+	if skill_id == "skill_sand_burial" and not p.star_brilliance_awakened:
+		_log("〖沙葬〗需觉醒〖星辉〗后才能发动。")
 		return
-	# 〖贤者之书〗：选择区域内一张牌丢弃，再选择目标
-	if skill_id == "skill_sage_book":
-		var sopts := _zone_card_options(p)
-		if sopts.is_empty():
-			_log("你的区域内没有可丢弃的牌，〖贤者之书〗发动失败。")
+	# 主动/转换技：检查本回合剩余次数
+	if stype == "active" or stype == "switch":
+		if int(p.skill_uses_left.get(skill_id, 0)) <= 0:
+			_log("本回合该技能次数已用完。")
 			return
-		if _target_candidates("single_enemy", "").is_empty():
-			_log("没有其他合法玩家，〖贤者之书〗发动失败。")
-			return
-		pending = {"kind": "sage", "skill_id": skill_id, "options": sopts}
-		mode = Mode.SKILL_PICK
-		_log("〖贤者之书〗：请选择要丢弃的牌。")
+	# 1. 技能特判（数据无法表达的前置检查与选择）
+	var handler := String(SKILL_SPECIAL_HANDLERS.get(skill_id, ""))
+	if handler != "" and bool(call(handler, p, skill, skill_id)):
 		return
-	# 〖相生相灭〗：需自身有「玄暗」且场上有其他带「皎白」的玩家
-	if skill_id == "skill_mutual":
-		if p.status_layer("dark") <= 0:
-			_log("你没有「玄暗」，〖相生相灭〗发动失败。")
-			return
-		var has_pale := false
-		for i in players.size():
-			if i != current and not players[i].dead and players[i].status_layer("pale") > 0:
-				has_pale = true
-		if not has_pale:
-			_log("场上没有携带「皎白」的其他玩家，〖相生相灭〗发动失败。")
-			return
-		pending = {"kind": "mutual", "source": current, "skill_id": skill_id, "target_type": "single_enemy"}
-		mode = Mode.SELECT_TARGET
-		_log("〖相生相灭〗：请选择一名携带「皎白」的玩家。")
+	# 2. 数据驱动的弃牌堆检索（如〖坚壁〗）
+	if _try_retrieve_defense(skill, skill_id):
 		return
-	# 〖信仰之跃〗：选择摸牌数量（1~3）
-	if skill_id == "skill_leap_faith":
-		pending = {"kind": "leap", "skill_id": skill_id, "options": ["1", "2", "3"]}
-		mode = Mode.SKILL_PICK
-		_log("〖信仰之跃〗：请选择要摸取的数量（摸 X 张，失去 2X 点生命）。")
-		return
-	# 〖失足之幸〗：生命值 ≥20 才能发动
-	if skill_id == "skill_false_step" and p.hp < 20:
-		_log("生命值不足 20，〖失足之幸〗发动失败。")
-		return
-	# 〖坚壁〗类：需从弃牌堆检索防御牌
-	for fx in skill.get("effects", []):
-		for action in fx.get("actions", []):
-			if String(action.get("type", "")) == "retrieve_defense":
-				var options: Array[String] = []
-				var seen := {}
-				for cid in discard_pile:
-					if String(cid) in action.get("defense_ids", []) and not seen.has(cid):
-						seen[cid] = true
-						options.append(String(cid))
-				if options.is_empty():
-					# 弃牌堆没有目标牌则发动失败，不消耗次数
-					_log("弃牌堆中没有【防御1】或【防御2】，%s 发动失败。" % String(skill["name"]))
-					return
-				pending = {"kind": "skill_retrieve", "skill_id": skill_id, "options": options}
-				mode = Mode.SKILL_PICK
-				_log("请选择一张防御牌加入手牌。")
-				return
-	# 需要选目标的主动技
+	# 3. 需要选目标的主动技
 	var tt := String(skill.get("target_type", "none"))
 	if tt == "single_any" or tt == "single_enemy":
 		var candidates := _target_candidates(tt, "")
 		if candidates.is_empty():
 			_log("没有合法目标，%s 发动失败。" % String(skill["name"]))
 			return
-		pending = {"kind": "skill", "source": current, "skill_id": skill_id, "target_type": tt}
+		_set_pending(PENDING_SKILL, {"source": current, "skill_id": skill_id, "target_type": tt})
 		mode = Mode.SELECT_TARGET
 		_log("请选择%s的目标。" % String(skill["name"]))
 		return
-	# 其他主动技：直接结算
+	# switch / limited 不应该走通用路径，已在特判里拦截
+	if stype == "switch" or stype == "limited":
+		_log("%s 无法通过通用路径结算。" % String(skill.get("name", "")))
+		return
+	# 4. 其他主动技：直接结算
 	p.skill_uses_left[skill_id] = int(p.skill_uses_left[skill_id]) - 1
 	_log("%s 发动了%s。" % [p.name, String(skill["name"])])
 	_run_actions(current, skill.get("effects", []), current, {"source_name": String(skill["name"])})
 	_kick_damage()
 
+# 〖分形几何〗：将一张【普通攻击】视作【防御2】布置到预备区
+func _skill_fractal(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	var fopts: Array[String] = []
+	for i in p.hand.size():
+		if p.hand[i] == "basic_attack":
+			fopts.append("hand:%d" % i)
+	if fopts.is_empty():
+		_log("手牌中没有【普通攻击】，〖分形几何〗发动失败。")
+		return true
+	_set_pending(PENDING_FRACTAL, {"skill_id": skill_id, "options": fopts})
+	mode = Mode.SKILL_PICK
+	_log("请选择一张【普通攻击】转化为【防御2】。")
+	return true
+
+# 〖贤者之书〗：选择区域内一张牌丢弃，再选择目标
+func _skill_sage_book(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	var sopts := _zone_card_options(p)
+	if sopts.is_empty():
+		_log("你的区域内没有可丢弃的牌，〖贤者之书〗发动失败。")
+		return true
+	if _target_candidates("single_enemy", "").is_empty():
+		_log("没有其他合法玩家，〖贤者之书〗发动失败。")
+		return true
+	_set_pending(PENDING_SAGE, {"skill_id": skill_id, "options": sopts})
+	mode = Mode.SKILL_PICK
+	_log("〖贤者之书〗：请选择要丢弃的牌。")
+	return true
+
+# 〖相生相灭〗：需自身有「玄暗」且场上有其他带「皎白」的玩家
+func _skill_mutual(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	if p.status_layer("dark") <= 0:
+		_log("你没有「玄暗」，〖相生相灭〗发动失败。")
+		return true
+	var has_pale := false
+	for i in players.size():
+		if i != current and not players[i].dead and players[i].status_layer("pale") > 0:
+			has_pale = true
+	if not has_pale:
+		_log("场上没有携带「皎白」的其他玩家，〖相生相灭〗发动失败。")
+		return true
+	_set_pending(PENDING_MUTUAL, {"source": current, "skill_id": skill_id, "target_type": "single_enemy"})
+	mode = Mode.SELECT_TARGET
+	_log("〖相生相灭〗：请选择一名携带「皎白」的玩家。")
+	return true
+
+# 〖信仰之跃〗：选择摸牌数量（1~3）
+func _skill_leap_faith(_p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	_set_pending(PENDING_LEAP, {"skill_id": skill_id, "options": ["1", "2", "3"]})
+	mode = Mode.SKILL_PICK
+	_log("〖信仰之跃〗：请选择要摸取的数量（摸 X 张，失去 2X 点生命）。")
+	return true
+
+# 〖失足之幸〗：生命值 ≥20 才能发动（不满足时拦截；满足则继续通用流程）
+func _skill_false_step(p: PlayerData, _skill: Dictionary, _skill_id: String) -> bool:
+	if p.hp < 20:
+		_log("生命值不足 20，〖失足之幸〗发动失败。")
+		return true
+	return false
+
+# 雷雨〖引雷〗（限定技）：将【富兰克林之钥】加入手牌
+func _skill_lightning_rod(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	p.limited_used[skill_id] = true
+	p.hand.append("special_franklin_key")
+	_log("%s 发动〖引雷〗：一张【富兰克林之钥】加入手牌。" % p.name)
+	return true
+
+# 雷雨〖尖端放电〗：弃一张手牌 → 对场上所有带「触电」的玩家造成2点灵魂伤害
+func _skill_tip_discharge(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	# 前置检查：场上必须存在带「触电」标记的玩家
+	var has_electrified := false
+	for other in players:
+		if not other.dead and other.has_status("electrified"):
+			has_electrified = true
+			break
+	if not has_electrified:
+		_log("场上没有带「触电」标记的玩家，〖尖端放电〗无法发动。")
+		return true
+	if p.hand.is_empty():
+		_log("手牌为空，〖尖端放电〗发动失败。")
+		return true
+	# 选择一张手牌
+	var opts: Array[String] = []
+	for i in p.hand.size():
+		opts.append("hand:%d" % i)
+	_set_pending(PENDING_SAND_BURY_HAND, {"skill_id": skill_id, "sub_kind": "tip_discharge", "step": 1, "options": opts})
+	mode = Mode.SKILL_PICK
+	_log("〖尖端放电〗：请选择一张手牌弃置。")
+	return true
+
+# 奥比亚〖窥伺之眼〗：选一张手牌视作【窥视】置入敌方判定区
+func _skill_peep_eye(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	if p.hand.is_empty():
+		_log("手牌为空，〖窥伺之眼〗发动失败。")
+		return true
+	var opts: Array[String] = []
+	for i in p.hand.size():
+		opts.append("hand:%d" % i)
+	_set_pending(PENDING_PEEP_HAND, {"skill_id": skill_id, "options": opts})
+	mode = Mode.SKILL_PICK
+	_log("〖窥伺之眼〗：请选择一张手牌作为【窥视】使用。")
+	return true
+
+# 李斯特〖振荡〗（转换技）：强制按 oscillation_mode 轮换 —— 第一次必①、用后切②、再下次必①
+func _skill_oscillation(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	var form := int(p.oscillation_mode)
+	if form == 0:
+		# ① 自选弃2手牌 → 选敌方目标 → 视作使用【跳过】
+		if p.hand.size() < 2:
+			_log("手牌不足 2 张，〖振荡〗形态①发动失败。")
+			return true
+		var opts: Array[String] = []
+		for i in p.hand.size():
+			opts.append("hand:%d" % i)
+		_set_pending(PENDING_SAND_BURY_HAND, {"skill_id": skill_id, "sub_kind": "osc_discard", "step": 1, "options": opts})
+		mode = Mode.SKILL_PICK
+		_log("〖振荡〗形态①：请选择第 1 张要弃置的手牌（共需弃 2 张）。")
+	else:
+		# ② 摸2牌 + 自加跳过（无目标，直接结算）
+		p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
+		p.oscillation_mode = 0  # 下次切换形态①
+		_draw_cards(p, 2)
+		p.add_status("skip", -1, 1)
+		mode = Mode.PLAY
+		_log("%s 发动〖振荡〗形态②：摸 2 张牌，对自己施加「跳过」。下次必形态①。" % p.name)
+		_kick_damage()
+	return true
+
+# 狄瑟〖沙葬〗（觉醒技）：弃两张牌 → 骰子 → AoE 点数/2 物理伤害
+func _skill_sand_burial(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	var opts: Array[String] = []
+	for i in p.hand.size():
+		opts.append("hand:%d" % i)
+	for i in p.equipment.size():
+		opts.append("equip:%d" % i)
+	for i in p.reserve.size():
+		opts.append("reserve:%d" % i)
+	if opts.size() < 2:
+		_log("可用牌不足 2 张，〖沙葬〗发动失败。")
+		return true
+	_set_pending(PENDING_SAND_BURY_HAND, {"skill_id": skill_id, "sub_kind": "sand_bury", "step": 1, "options": opts})
+	mode = Mode.SKILL_PICK
+	_log("〖沙葬〗：请选择第一张要弃置的牌。")
+	return true
+
+# 数据驱动的弃牌堆检索：技能效果含 retrieve_defense 时先选牌
+func _try_retrieve_defense(skill: Dictionary, skill_id: String) -> bool:
+	for fx in skill.get("effects", []):
+		for action in fx.get("actions", []):
+			if String(action.get("type", "")) != "retrieve_defense":
+				continue
+			var options: Array[String] = []
+			var seen := {}
+			for cid in discard_pile:
+				if String(cid) in action.get("defense_ids", []) and not seen.has(cid):
+					seen[cid] = true
+					options.append(String(cid))
+			if options.is_empty():
+				# 弃牌堆没有目标牌则发动失败，不消耗次数
+				_log("弃牌堆中没有【防御1】或【防御2】，%s 发动失败。" % String(skill["name"]))
+				return true
+			_set_pending(PENDING_SKILL_RETRIEVE, {"skill_id": skill_id, "options": options})
+			mode = Mode.SKILL_PICK
+			_log("请选择一张防御牌加入手牌。")
+			return true
+	return false
+
 func ui_skill_pick(token: String) -> void:
 	if mode != Mode.SKILL_PICK:
 		return
-	var kind := String(pending.get("kind", ""))
+	var handler := String(SKILL_PICK_HANDLERS.get(_pending_kind(), ""))
+	if handler == "":
+		return
 	var p := players[current]
 	var skill_id := String(pending.get("skill_id", ""))
-	if kind == "skill_retrieve":
-		var idx := discard_pile.find(token)
-		if idx == -1:
-			return
-		discard_pile.remove_at(idx)
-		p.hand.append(token)
-		p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
-		var skill := db.get_skill(skill_id)
-		_log("%s 发动%s，将%s加入手牌。" % [p.name, String(skill.get("name", skill_id)), String(db.get_card(token).get("name", token))])
-		pending = {}
+	call(handler, p, skill_id, token)
+
+func _pick_retrieve(p: PlayerData, skill_id: String, token: String) -> void:
+	var idx := discard_pile.find(token)
+	if idx == -1:
+		return
+	discard_pile.remove_at(idx)
+	p.hand.append(token)
+	p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
+	var skill := db.get_skill(skill_id)
+	_log("%s 发动%s，将%s加入手牌。" % [p.name, String(skill.get("name", skill_id)), String(db.get_card(token).get("name", token))])
+	pending = {}
+	mode = Mode.PLAY
+
+func _pick_fractal(p: PlayerData, skill_id: String, token: String) -> void:
+	var cid := _take_zone_card(p, token)
+	if cid != "basic_attack":
+		if not cid.is_empty():
+			p.hand.append(cid)
+		return
+	p.reserve.append("defend2")
+	p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
+	_log("%s 发动〖分形几何〗：一张【普通攻击】转化为【防御2】布置到预备区。" % p.name)
+	pending = {}
+	mode = Mode.PLAY
+
+func _pick_sage(p: PlayerData, skill_id: String, token: String) -> void:
+	# 只记录要丢弃的牌，真正移除/进弃牌堆推迟到选定目标后，取消时无副作用
+	var cid := _take_zone_card(p, token, false)
+	if cid.is_empty():
+		return
+	var status_map := ["vulnerable_1", "worsen_1", "cold_1"]
+	var form := clampi(p.sage_mode, 0, 2)
+	_set_pending(PENDING_SAGE_TARGET, {
+		"source": current,
+		"skill_id": skill_id,
+		"target_type": "single_enemy",
+		"sage_form": form,
+		"sage_status": status_map[form],
+		"sage_token": token,
+		"sage_card": cid,
+	})
+	mode = Mode.SELECT_TARGET
+	_log("请选择〖贤者之书〗（形态 %s）的目标。" % ["①", "②", "③"][form])
+
+func _pick_leap(p: PlayerData, skill_id: String, token: String) -> void:
+	var x := int(token)
+	if x < 1 or x > 3:
+		return
+	p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
+	_log("%s 发动〖信仰之跃〗：摸 %d 张牌，然后失去 %d 点生命。" % [p.name, x, x * 2])
+	pending = {}
+	mode = Mode.PLAY
+	_draw_cards(p, x)
+	_lose_hp_direct(p, x * 2, "〖信仰之跃〗")
+	if mode != Mode.DISCARD_PICK:
 		mode = Mode.PLAY
-		return
-	if kind == "fractal":
-		var cid := _take_zone_card(p, token)
-		if cid != "basic_attack":
-			if not cid.is_empty():
-				p.hand.append(cid)
-			return
-		p.reserve.append("defend2")
-		p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
-		_log("%s 发动〖分形几何〗：一张【普通攻击】转化为【防御2】布置到预备区。" % p.name)
-		pending = {}
-		mode = Mode.PLAY
-		return
-	if kind == "sage":
-		# 只记录要丢弃的牌，真正移除/进弃牌堆推迟到选定目标后，取消时无副作用
-		var cid := _take_zone_card(p, token, false)
-		if cid.is_empty():
-			return
-		var status_map := ["vulnerable_1", "worsen_1", "cold_1"]
-		var form := clampi(p.sage_mode, 0, 2)
-		pending = {
-			"kind": "sage_target",
-			"source": current,
-			"skill_id": skill_id,
-			"target_type": "single_enemy",
-			"sage_form": form,
-			"sage_status": status_map[form],
-			"sage_token": token,
-			"sage_card": cid,
-		}
-		mode = Mode.SELECT_TARGET
-		_log("请选择〖贤者之书〗（形态 %s）的目标。" % ["①", "②", "③"][form])
-		return
-	if kind == "leap":
-		var x := int(token)
-		if x < 1 or x > 3:
-			return
-		p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
-		_log("%s 发动〖信仰之跃〗：摸 %d 张牌，然后失去 %d 点生命。" % [p.name, x, x * 2])
-		pending = {}
-		mode = Mode.PLAY
-		_draw_cards(p, x)
-		_lose_hp_direct(p, x * 2, "〖信仰之跃〗")
-		if mode != Mode.DISCARD_PICK:
-			mode = Mode.PLAY
-		if p.dying and not p.dead:
-			_open_dying_window(current)
-		return
-	if kind == "exile_ask":
-		var dying_idx := int(pending.get("dying", current))
-		var dp := players[dying_idx]
-		pending = {}
-		if token == "no":
-			_exile_done[dying_idx] = true
-			_log("%s 放弃发动〖放逐〗。" % dp.name)
-			_finalize_dying(dying_idx)
-			return
-		dp.limited_used["skill_exile"] = true
+	_ensure_dying_window()
+
+func _pick_exile_ask(_p: PlayerData, _skill_id: String, token: String) -> void:
+	var dying_idx := int(pending.get("dying", current))
+	var dp := players[dying_idx]
+	pending = {}
+	if token == "no":
 		_exile_done[dying_idx] = true
-		pending = {"kind": "exile_target", "source": dying_idx, "target_type": "single_enemy"}
-		mode = Mode.SELECT_TARGET
-		_log("请选择〖放逐〗要清空的目标。")
+		_log("%s 放弃发动〖放逐〗。" % dp.name)
+		_finalize_dying(dying_idx)
 		return
+	dp.limited_used["skill_exile"] = true
+	_exile_done[dying_idx] = true
+	_set_pending(PENDING_EXILE_TARGET, {"source": dying_idx, "target_type": "single_enemy"})
+	mode = Mode.SELECT_TARGET
+	_log("请选择〖放逐〗要清空的目标。")
+
+# 古卢〖仁慈〗：lose_hp = 直接扣血；add_stop_sword = 自加止戈
+func _pick_mercy(p: PlayerData, _skill_id: String, token: String) -> void:
+	pending = {}
+	if token == "lose_hp":
+		_lose_hp_direct(p, 2, "〖仁慈〗选择①")
+		_log("%s 选择〖仁慈〗①：失去 2 点生命。" % p.name)
+	else:
+		_add_status_capped(p, "stop_sword", 1, -1)
+		_log("%s 选择〖仁慈〗②：对自己施加一层「止戈」。" % p.name)
+	mode = Mode.PLAY
+	_kick_damage()
+
+# 判定 prompt_choice 选择器：按 choices 数组索引执行对应动作
+func _pick_judge_prompt(p: PlayerData, _skill_id: String, token: String) -> void:
+	var idx := int(token) if token.is_valid_int() else -1
+	if idx < 0:
+		pending = {}; mode = Mode.PLAY; return
+	var choices: Array = pending.get("choices", [])
+	if idx >= choices.size():
+		pending = {}; mode = Mode.PLAY; return
+	var choice: Dictionary = choices[idx]
+	var src := int(pending.get("source", current))
+	var tgt := int(pending.get("target", current))
+	var src_name := String(pending.get("source_name", "判定"))
+	pending = {}
+	mode = Mode.PLAY
+	_log("%s 选择：%s。" % [players[tgt].name, String(choice.get("label", token))])
+	for action in choice.get("actions", []):
+		_execute_action(src, action, tgt, {"source_name": src_name})
+	_kick_damage()
+
+# 奥比亚〖窥伺之眼〗：选手牌 → 选敌方目标 → 视作【窥视】进判定区
+func _pick_peep_hand(p: PlayerData, skill_id: String, token: String) -> void:
+	var cid := _take_zone_card(p, token)
+	if cid.is_empty():
+		mode = Mode.PLAY
+		return
+	pending = {}
+	var candidates := _target_candidates("single_enemy", "")
+	if candidates.is_empty():
+		_log("没有合法目标，〖窥伺之眼〗发动失败。")
+		p.hand.append(cid); mode = Mode.PLAY
+		return
+	# 注意：次数扣除推迟到 PENDING_PEEP_TARGET 确认后（避免取消浪费次数）
+	_set_pending(PENDING_PEEP_TARGET, {"source": current, "target_type": "single_enemy"})
+	mode = Mode.SELECT_TARGET
+	pending["peep_card"] = cid
+	pending["skill_id"] = skill_id
+	_log("〖窥伺之眼〗：请选择要放置【窥视】的目标（确认后才消耗次数）。")
+
+# 选牌处理器：tip_discharge 一步 / sand_bury 两步 / osc_discard 两步（副作用全部后置）
+func _pick_sand_bury_hand(p: PlayerData, skill_id: String, token: String) -> void:
+	var sub_kind := String(pending.get("sub_kind", ""))
+	var step := int(pending.get("step", 1))
+
+	# 尖端放电：一步选完一张手牌就走 finalize（不走两步）
+	if sub_kind == "tip_discharge":
+		var cid := _take_zone_card(p, token)
+		if cid.is_empty():
+			pending = {}; mode = Mode.PLAY; return
+		pending = {}
+		_to_discard(cid)  # 弃牌（仅这一次，finalize 不再弃）
+		_finalize_tip_discharge(p, skill_id, cid)
+		mode = Mode.PLAY; _kick_damage()
+		return
+
+	# 沙葬 / 振荡①：两步选牌（pick 层只选不做副作用）
+	if step == 1:
+		var cid := _take_zone_card(p, token)
+		if cid.is_empty():
+			pending = {}; mode = Mode.PLAY; return
+		pending["first_card"] = cid
+		pending["first_zone_token"] = token  # 记录原始位置，用于取消时恢复
+		# 振荡①只能选手牌；沙葬可以选任何区域
+		var rest: Array[String] = []
+		if sub_kind == "osc_discard":
+			for i in p.hand.size():
+				rest.append("hand:%d" % i)
+		else:
+			for i in p.hand.size():
+				rest.append("hand:%d" % i)
+			for i in p.equipment.size():
+				rest.append("equip:%d" % i)
+			for i in p.reserve.size():
+				rest.append("reserve:%d" % i)
+		if rest.is_empty():
+			# 只有一张可选牌——理论上沙葬会有更多（装备/预备），振荡①会提前 hand<2 return
+			var cid1 := String(pending.get("first_card", ""))
+			pending = {}
+			if sub_kind == "sand_bury":
+				_to_discard(cid1)
+				_finalize_sand_bury(p, skill_id, cid1, "")
+				mode = Mode.PLAY
+				_kick_damage()
+			else:
+				# 振荡①：弃牌/扣次数/形态轮换全部等目标确认后再执行
+				var candidates := _target_candidates("single_enemy", "")
+				if candidates.is_empty():
+					p.hand.append(cid1)
+					_log("%s 发动〖振荡〗形态①：没有合法目标，手牌已恢复。" % p.name)
+					mode = Mode.PLAY
+					return
+				_set_pending(PENDING_OSC_TARGET, {"source": current, "skill_id": skill_id, "first_card": cid1, "second_card": "", "target_type": "single_enemy"})
+				mode = Mode.SELECT_TARGET
+				_log("%s 发动〖振荡〗形态①：请选择要施加【跳过】的目标（确认后才弃牌）。" % p.name)
+			return
+		pending["step"] = 2
+		pending["options"] = rest
+		_rebuild_skill_pick_immediate()
+		return
+
+	# 步骤2：选第二张
+	if step == 2:
+		var cid2 := _take_zone_card(p, token)
+		var cid1 := String(pending.get("first_card", ""))
+		pending = {}
+		if sub_kind == "osc_discard":
+			# 振荡①：副作用全部在 PENDING_OSC_TARGET 确认后才执行（避免取消丢牌/次数）
+			_set_pending(PENDING_OSC_TARGET, {"source": current, "skill_id": skill_id, "first_card": cid1, "second_card": cid2, "target_type": "single_enemy"})
+			mode = Mode.SELECT_TARGET
+			_log("%s 发动〖振荡〗形态①：已选 2 张手牌 → 请选择要施加【跳过】的目标（确认后才弃牌）。" % p.name)
+			return
+		# 沙葬：副作用在 pick 层就做（因为不需要选目标）
+		_to_discard(cid1); _to_discard(cid2)
+		_log("%s 发动〖沙葬〗：弃置了 %s 与 %s。" % [p.name, String(db.get_card(cid1).get("name", cid1)), String(db.get_card(cid2).get("name", cid2))])
+		_finalize_sand_bury(p, skill_id, cid1, cid2)
+		mode = Mode.PLAY; _kick_damage()
+
+# 尖端放电最终结算（_to_discard 已在 pick 层完成）
+func _finalize_tip_discharge(p: PlayerData, skill_id: String, _cid: String) -> void:
+	p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
+	var hit: Array[String] = []
+	for other in players:
+		if other.dead or other.dying:
+			continue
+		if other.has_status("electrified"):
+			hit.append(other.name)
+			_deal_damage(current, players.find(other), 2, "soul", "〖尖端放电〗")
+	if hit.is_empty():
+		_log("场上已无带「触电」标记的玩家，〖尖端放电〗无伤害结算。")
+	else:
+		var _joined_hit := ""
+		for _n in hit:
+			if _joined_hit != "": _joined_hit += "、"
+			_joined_hit += _n
+		_log("%s 发动〖尖端放电〗：对 [%s] 各造成 2 点灵魂伤害。" % [p.name, _joined_hit])
+	_kick_damage()
+
+# 沙葬最终结算：掷骰子 → AoE ceil(roll/2) 物理伤害，自己受50%
+func _finalize_sand_bury(p: PlayerData, skill_id: String, _cid1: String, _cid2: String) -> void:
+	p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
+	var roll := randi() % 6 + 1
+	var dmg := int(ceil(float(roll) * 0.5))
+	_log("%s 发动〖沙葬〗：骰子掷出 %d 点 → 对全场造成 %d 点物理伤害（自身减半）。" % [p.name, roll, dmg])
+	for i in players.size():
+		if players[i].dead:
+			continue
+		var amt := dmg
+		if i == current:
+			amt = maxi(0, int(floor(float(dmg) * 0.5)))
+		_deal_damage(current, i, amt, "physical", "〖沙葬〗")
+
+# 辅助：选完第一张牌后立即刷新 SKILL_PICK 层
+func _rebuild_skill_pick_immediate() -> void:
+	mode = Mode.SKILL_PICK
+	pass
+
+# 「喧闹」：回合开始检查手牌中是否有【跳过】→ 弃所有【跳过】并摸等量
+func _check_noise_on_turn_start(p: PlayerData) -> void:
+	if not _has_skill(p, "skill_noise"):
+		return
+	var skip_count := p.hand.filter(func(c): return c == "skip").size()
+	if skip_count > 0:
+		var new_hand: Array[String] = []
+		for c in p.hand:
+			if c != "skip":
+				new_hand.append(c)
+			else:
+				_to_discard(c)
+		p.hand = new_hand
+		_log("%s 触发〖喧闹〗：弃掉 %d 张【跳过】。" % [p.name, skip_count])
+		_draw_cards(p, skip_count)
+		_log("%s 摸了 %d 张牌（等量替代）。" % [p.name, skip_count])
+
+# 〖星辉〗觉醒：每回合开始检查 HP≤6
+func _check_star_brilliance(p: PlayerData) -> void:
+	if not _has_skill(p, "skill_star_brilliance"):
+		return
+	if p.star_brilliance_awakened:
+		return
+	if p.hp <= 6:
+		var old_max := p.max_hp
+		p.max_hp -= 6
+		p.max_hp = maxi(1, p.max_hp)
+		p.hp = mini(p.max_hp, p.hp + 6)
+		p.star_brilliance_awakened = true
+		if not p.skill_ids.has("skill_sand_burial"):
+			p.skill_ids.append("skill_sand_burial")
+		_log("%s 触发〖星辉〗觉醒！生命上限 %d→%d，回复至 %d 点生命，获得〖沙葬〗。" % [p.name, old_max, p.max_hp, p.hp])
 
 func ui_cancel_skill_pick() -> void:
 	if mode != Mode.SKILL_PICK:
 		return
 	var kind := String(pending.get("kind", ""))
-	if kind == "exile_ask":
-		# 放弃放逐，继续死亡结算
+	if kind == PENDING_EXILE_ASK:
 		var dying_idx := int(pending.get("dying", current))
 		pending = {}
 		_exile_done[dying_idx] = true
 		_log("%s 放弃发动〖放逐〗。" % players[dying_idx].name)
 		_finalize_dying(dying_idx)
 		return
+	var p := players[current]
+	# 恢复被 _take_zone_card 从 hand/equip/reserve 移走的牌（避免凭空消失）
+	# 流程提示：
+	#   tip_discharge:   step=1 选完 1 张直接结算，无法中途取消 → 不需要恢复
+	#   osc_discard:     step=1 可取消（first_card 在 SKILL_PICK）→ 需要恢复到 hand
+	#                    step=2 后进入 SELECT_TARGET → 取消走 ui_cancel_target（已修）
+	#   sand_bury:       step=1 可取消（first_card 在 SKILL_PICK）→ 按 zone_token 恢复
+	#                    step=2 选完直接结算，无法中途取消 → 不需要恢复
+	var sub_kind := String(pending.get("sub_kind", ""))
+	# 只要 pending 里还存着 first_card，就说明这张牌已被 _take_zone_card 从区域移走、
+	# 但副作用尚未执行（无论当前处于 step 1 还是 step 2），取消时都必须按原始区域归还。
+	if pending.has("first_card") and (sub_kind == "osc_discard" or sub_kind == "sand_bury"):
+		var cid_r := String(pending.get("first_card", ""))
+		var zt := String(pending.get("first_zone_token", ""))
+		if not cid_r.is_empty():
+			if zt.begins_with("equip:"):
+				p.equipment.append(cid_r)
+			elif zt.begins_with("reserve:"):
+				p.reserve.append(cid_r)
+			else:
+				p.hand.append(cid_r)
+			_log("已恢复被暂存的牌 %s 到 %s。" % [String(db.get_card(cid_r).get("name", cid_r)), zt.split(":")[0] if zt != "" else "hand"])
 	pending = {}
 	mode = Mode.PLAY
 	_log("取消了技能发动。")
@@ -1726,7 +2474,7 @@ func _trigger_event(src_idx: int) -> void:
 	var event := db.get_event(event_id)
 	_log("%s 触发特殊事件：%s —— %s" % [players[src_idx].name, String(event.get("name", "")), String(event.get("description", ""))])
 	# 先显示事件说明窗口，确认后再执行
-	pending = {"kind": "event_show", "event_id": event_id, "source": src_idx}
+	_set_pending(PENDING_EVENT_SHOW, {"event_id": event_id, "source": src_idx})
 	mode = Mode.EVENT_SHOW
 
 func ui_confirm_event_show() -> void:
@@ -1746,7 +2494,7 @@ func ui_confirm_event_show() -> void:
 			if candidates.is_empty():
 				_log("没有合法目标，事件无效。")
 				return
-			pending = {"kind": "event", "source": src, "event_id": event_id, "target_type": tt}
+			_set_pending(PENDING_EVENT, {"source": src, "event_id": event_id, "target_type": tt})
 			mode = Mode.SELECT_TARGET
 			_log("请选择事件目标。")
 			return
@@ -1759,7 +2507,7 @@ func ui_confirm_event_show() -> void:
 		if candidates.is_empty():
 			_log("没有合法目标，事件无效。")
 			return
-		pending = {"kind": "event", "source": src, "event_id": event_id, "target_type": tt}
+		_set_pending(PENDING_EVENT, {"source": src, "event_id": event_id, "target_type": tt})
 		mode = Mode.SELECT_TARGET
 		_log("请选择事件目标。")
 		return

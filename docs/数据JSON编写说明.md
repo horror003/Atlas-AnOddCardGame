@@ -117,7 +117,7 @@
 | `physical`  | 物理伤害，可被防御/装备减免                               |
 | `magical`   | 法术伤害，可被防御/装备减免                               |
 | `soul`      | 灵魂伤害，可被防御/装备减免                               |
-| `life_loss` | **生命流失**，直接扣血，**不受防御/装备影响** |
+| `hp_loss`   | **生命流失**，直接扣血，**不受防御/装备影响** |
 
 > 灵魂伤害与生命流失的区别：灵魂伤害可被响应减免，生命流失直接扣血不可减免。
 
@@ -297,21 +297,25 @@
 
 ```json
 {
-  "id": "skill_fenji",
-  "name": "〖奋击〗",
+  "id": "skill_false_step",
+  "name": "〖失足之幸〗",
   "skill_type": "active",
-  "description": "本回合你使用的下一张【普通攻击】伤害+1。",
+  "description": "出牌阶段限1次。当你的生命值≥20时，你可以失去4点生命并选择一名其他玩家，令其回复3点生命。",
   "max_uses_per_turn": 1,
-  "target_type": "none",
+  "target_type": "single_enemy",
   "effects": [
     {
       "trigger": "on_use",
       "actions": [
         {
-          "type": "add_status",
+          "type": "lose_hp",
           "target": "self",
-          "status_id": "attack_up_1",
-          "duration": -1
+          "value": 4
+        },
+        {
+          "type": "heal",
+          "target": "selected",
+          "value": 3
         }
       ]
     }
@@ -321,10 +325,10 @@
 
 ```json
 {
-  "id": "skill_dawn",
-  "name": "〖晨光〗",
+  "id": "skill_hope",
+  "name": "〖希冀〗",
   "skill_type": "opening",
-  "description": "开场技能：游戏开始时摸1张牌。",
+  "description": "开场技。你失去8点生命，并摸2张牌。",
   "max_uses_per_turn": 0,
   "target_type": "none",
   "effects": [
@@ -332,9 +336,14 @@
       "trigger": "on_game_start",
       "actions": [
         {
+          "type": "lose_hp",
+          "target": "self",
+          "value": 8
+        },
+        {
           "type": "draw_cards",
           "target": "self",
-          "value": 1
+          "value": 2
         }
       ]
     }
@@ -557,7 +566,7 @@
 | `draw_limit`    | 是   | int                    | **摸牌数值**。摸牌阶段手牌补足目标数量       |
 | `hand_limit`    | 是   | int                    | **存牌数值**。弃牌阶段手牌上限，超过需弃置   |
 | `attribute_ids` | 是   | Array<string></string> | 两个属性 ID，**两个派系各 1 个**，如 `["time", "chaos"]` |
-| `skill_ids`     | 是   | Array<string></string> | 技能 ID 列表，如 `["skill_fenji", "skill_dawn"]` |
+| `skill_ids`     | 是   | Array<string></string> | 技能 ID 列表，如 `["skill_perceive", "skill_hope"]` |
 
 ### 5.3 角色示例
 
@@ -570,18 +579,6 @@
   "hand_limit": 3,
   "attribute_ids": ["time", "chaos"],
   "skill_ids": ["skill_perceive"]
-}
-```
-
-```json
-{
-  "id": "char_aila",
-  "name": "艾拉",
-  "max_hp": 20,
-  "draw_limit": 5,
-  "hand_limit": 3,
-  "attribute_ids": ["delusion", "info"],
-  "skill_ids": ["skill_fenji"]
 }
 ```
 
@@ -731,7 +728,7 @@
 | 类型       | 括号 | 示例                 |
 | ---------- | ---- | -------------------- |
 | 卡牌名     | 【】 | `"【普通攻击】"`   |
-| 技能名     | 〖〗 | `"〖奋击〗"`       |
+| 技能名     | 〖〗 | `"〖技能名〗"`       |
 | 状态名     | 「」 | `"「燃烧」"`       |
 | 事件名     | 『』 | `"『瘟疫』"`       |
 | 装备组合名 | 《》 | `"《利刃铁甲》"`   |
@@ -741,7 +738,7 @@
 
 **濒死保护**：任何将角色生命值降至 0 或以下的伤害/失去生命，都会使其进入濒死状态，需要其他玩家使用食物牌救援。
 
-**生命流失（`life_loss`）**：不属于伤害，不受防御/装备影响，直接扣血。扣至 0 仍触发濒死。
+**生命流失（`hp_loss`）**：不属于伤害，不受防御/装备影响，直接扣血。扣至 0 仍触发濒死。
 
 **防御牌**：`is_defense: true` 的牌在出牌阶段点击会直接进预备区，不执行 effects。预备区中按防御数值堆叠显示。
 

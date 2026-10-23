@@ -107,6 +107,17 @@ const TEMPLATES := {
 	"combos": {"id": "new_combo", "name": "《新组合》", "parts": [], "description": "", "passive": {}},
 }
 
+# 必填字段：启动自检时缺失会提示（其余字段为可选，允许省略）
+const REQUIRED_FIELDS := {
+	"cards": ["id", "name", "type"],
+	"skills": ["id", "name", "skill_type", "effects"],
+	"events": ["id", "name", "effects"],
+	"attributes": ["id", "name", "faction"],
+	"characters": ["id", "name", "max_hp", "draw_limit", "hand_limit"],
+	"statuses": ["id", "name", "duration", "trigger"],
+	"combos": ["id", "name", "parts"],
+}
+
 var raw: Dictionary = {}          # 分类 key -> 整个 JSON 对象
 var current_cat := "cards"
 var current_index := -1
@@ -240,6 +251,7 @@ func _ready() -> void:
 	_apply_theme()
 	_build_ui()
 	_load_all()
+	_self_check()
 	_rebuild_list()
 	if _entries().size() > 0:
 		_select_entry(0)
@@ -394,9 +406,31 @@ func _on_save() -> void:
 		if f == null:
 			_set_status("无法写入：" + String(FILES[key]), true)
 			return
-		f.store_string(JSON.stringify(raw[key], "  ") + "\n")
+		# 统一格式：2 空格缩进、整数值不带小数点（避免 5.0 与 5 混用）
+		var data: Variant = _normalize_numbers(raw[key])
+		f.store_string(JSON.stringify(data, "  ") + "\n")
 		f.close()
 	_set_status("已保存全部数据文件。", false)
+
+func _normalize_numbers(node: Variant) -> Variant:
+	## JSON 解析后所有数字都是 float；把整数值统一还原为 int，保证输出格式稳定
+	match typeof(node):
+		TYPE_FLOAT:
+			var num: float = node
+			if absf(num) < 1e15 and is_equal_approx(num, roundf(num)):
+				return int(roundf(num))
+			return num
+		TYPE_DICTIONARY:
+			var out: Dictionary = {}
+			for k in node.keys():
+				out[k] = _normalize_numbers(node[k])
+			return out
+		TYPE_ARRAY:
+			var arr: Array = []
+			for item in node:
+				arr.append(_normalize_numbers(item))
+			return arr
+	return node
 
 # ---------------- 列表与表单 ----------------
 
@@ -648,7 +682,35 @@ func _find_entry_index(id: String) -> int:
 			return i
 	return -1
 
-# ---------------- 校验 ----------------
+# ---------------- 启动自检 ----------------
+
+func _self_check() -> void:
+	## 对比字段 schema 与实际 JSON：提示未知字段与缺失的必填字段
+	var issues: Array[String] = []
+	for cat in SCHEMAS.keys():
+		var known := {}
+		for fs in SCHEMAS[cat]:
+			known[String(fs["key"])] = true
+		var list_key := _cat_list_key(String(cat))
+		var entries: Array = raw.get(String(cat), {}).get(list_key, [])
+		var required: Array = REQUIRED_FIELDS.get(String(cat), [])
+		for e in entries:
+			var id := String(e.get("id", "?"))
+			for key in e.keys():
+				if String(key).begins_with("_"):
+					continue
+				if not known.has(String(key)):
+					issues.append("%s[%s] 存在 schema 未定义的字段：%s" % [cat, id, key])
+			for key in required:
+				if not e.has(String(key)):
+					issues.append("%s[%s] 缺少必填字段：%s" % [cat, id, key])
+	if issues.is_empty():
+		print("[Editor] 字段自检通过：所有数据与 schema 一致。")
+		return
+	for msg in issues:
+		push_warning("[Editor] " + msg)
+	print("[Editor] 字段自检发现 %d 处问题（见警告输出）。" % issues.size())
+	_set_status("字段自检：%d 处问题，详见输出面板。" % issues.size(), true)
 
 func _validate_all() -> Array[String]:
 	var errors: Array[String] = []

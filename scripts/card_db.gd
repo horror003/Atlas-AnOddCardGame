@@ -50,6 +50,7 @@ func _init() -> void:
 	if combos_raw != null:
 		for e in combos_raw.get("combos", []):
 			combos.append(e)
+	_validate()
 
 func _load_json(path: String) -> Variant:
 	var f := FileAccess.open(path, FileAccess.READ)
@@ -63,26 +64,123 @@ func _load_json(path: String) -> Variant:
 		push_error("JSON 解析失败：" + path)
 	return data
 
+# ---------------- 引用完整性校验 ----------------
+# 加载后统一检查数据之间的引用，缺失时输出错误，避免运行期静默失效。
+
+func _validate() -> void:
+	var issues: Array[String] = []
+	for cid in deck_composition.keys():
+		if not cards.has(String(cid)):
+			issues.append("deck_composition 引用了不存在的卡牌：%s" % cid)
+		elif int(deck_composition[cid]) <= 0:
+			issues.append("deck_composition 中 %s 的数量无效（%d）" % [cid, int(deck_composition[cid])])
+	for eid in event_deck_list:
+		if not events.has(eid):
+			issues.append("event_deck 引用了不存在的事件：%s" % eid)
+	for c in characters:
+		var who := "角色 %s" % String(c.get("id", "?"))
+		for aid in c.get("attribute_ids", []):
+			if not attributes.has(String(aid)):
+				issues.append("%s 的 attribute_ids 引用了不存在的属性：%s" % [who, aid])
+		for sid in c.get("skill_ids", []):
+			if not skills.has(String(sid)):
+				issues.append("%s 的 skill_ids 引用了不存在的技能：%s" % [who, sid])
+	for combo in combos:
+		var combo_id := String(combo.get("id", "?"))
+		var parts: Array = combo.get("parts", [])
+		if parts.size() < 2:
+			issues.append("装备组合 %s 的 parts 少于 2 件" % combo_id)
+		for pid in parts:
+			var part: Dictionary = cards.get(String(pid), {})
+			if part.is_empty():
+				issues.append("装备组合 %s 的 parts 引用了不存在的卡牌：%s" % [combo_id, pid])
+			elif String(part.get("type", "")) != "equipment":
+				issues.append("装备组合 %s 的 parts 引用了非装备牌：%s" % [combo_id, pid])
+	var seen: Dictionary = {}
+	_check_refs("卡牌", cards.values(), issues, seen)
+	_check_refs("技能", skills.values(), issues, seen)
+	_check_refs("事件", events.values(), issues, seen)
+	_check_refs("属性", attributes.values(), issues, seen)
+	_check_refs("状态", statuses.values(), issues, seen)
+	_check_refs("装备组合", combos, issues, seen)
+	if issues.is_empty():
+		return
+	for msg in issues:
+		push_error("[CardDB] " + msg)
+	print("[CardDB] 数据引用校验发现 %d 处问题。" % issues.size())
+
+func _check_refs(label: String, entries: Array, issues: Array[String], seen: Dictionary) -> void:
+	## 递归扫描条目中的 id 引用字段（status_id / skill_id / card_id / event_id / defense_ids）
+	for entry in entries:
+		if typeof(entry) == TYPE_DICTIONARY:
+			_walk_refs(label, entry, issues, seen)
+
+func _walk_refs(label: String, node: Variant, issues: Array[String], seen: Dictionary) -> void:
+	match typeof(node):
+		TYPE_DICTIONARY:
+			var d: Dictionary = node
+			for k in d.keys():
+				var key := String(k)
+				var value: Variant = d[key]
+				match key:
+					"status_id":
+						_require(label, "状态", String(value), statuses, issues, seen)
+					"skill_id":
+						_require(label, "技能", String(value), skills, issues, seen)
+					"card_id":
+						_require(label, "卡牌", String(value), cards, issues, seen)
+					"event_id":
+						_require(label, "事件", String(value), events, issues, seen)
+					"defense_ids":
+						for cid in value:
+							_require(label, "卡牌", String(cid), cards, issues, seen)
+					_:
+						_walk_refs(label, value, issues, seen)
+		TYPE_ARRAY:
+			for item in node:
+				_walk_refs(label, item, issues, seen)
+
+func _require(label: String, kind: String, id: String, table: Dictionary, issues: Array[String], seen: Dictionary) -> void:
+	if id.is_empty() or table.has(id):
+		return
+	var sig := label + "|" + kind + "|" + id
+	if seen.has(sig):
+		return
+	seen[sig] = true
+	issues.append("%s 的效果引用了不存在的%s：%s" % [label, kind, id])
+
+# ---------------- 访问器（返回只读副本，防止外部改动污染数据字典） ----------------
+
 func get_card(id: String) -> Dictionary:
-	return cards.get(id, {})
+	var c: Dictionary = cards.get(id, {})
+	return c.duplicate(true)
 
 func get_skill(id: String) -> Dictionary:
-	return skills.get(id, {})
+	var s: Dictionary = skills.get(id, {})
+	return s.duplicate(true)
 
 func get_event(id: String) -> Dictionary:
-	return events.get(id, {})
+	var e: Dictionary = events.get(id, {})
+	return e.duplicate(true)
 
 func get_attribute(id: String) -> Dictionary:
-	return attributes.get(id, {})
+	var a: Dictionary = attributes.get(id, {})
+	return a.duplicate(true)
+
+func get_status(id: String) -> Dictionary:
+	var s: Dictionary = statuses.get(id, {})
+	return s.duplicate(true)
 
 func get_faction(id: String) -> Dictionary:
 	for f in factions:
 		if String(f.get("id", "")) == id:
-			return f
+			var cfg: Dictionary = f
+			return cfg.duplicate(true)
 	return {}
 
 func get_character(id: String) -> Dictionary:
 	for c in characters:
 		if String(c.get("id", "")) == id:
-			return c
+			var cfg: Dictionary = c
+			return cfg.duplicate(true)
 	return {}
