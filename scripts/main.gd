@@ -10,6 +10,9 @@ class DraggableCard extends Button:
 	func _get_drag_data(_at_position: Vector2) -> Variant:
 		if disabled:
 			return null
+		# 触屏上拖拽与滚动互相争抢，移动端只保留「点牌→点面板」两段式（桌面保留拖拽）
+		if main_scene.is_mobile():
+			return null
 		var g: AtlasGame = main_scene.game
 		if g.mode != AtlasGame.Mode.PLAY:
 			return null
@@ -27,7 +30,7 @@ class DraggableCard extends Button:
 				main_scene.call_deferred("_refresh")
 		var preview := Label.new()
 		preview.text = String(card.get("name", ""))
-		preview.add_theme_font_size_override("font_size", 14)
+		preview.add_theme_font_size_override("font_size", UITheme.fs(14))
 		preview.add_theme_stylebox_override("normal", UITheme.card_styles(UITheme.card_color(card))["normal"])
 		set_drag_preview(preview)
 		return {"hand_index": hand_index}
@@ -58,6 +61,30 @@ class DropLog extends Control:
 	func _drop_data(_at_position: Vector2, data: Variant) -> void:
 		main_scene._drop_on_log(data)
 
+## 技能按钮：移动端长按 450ms 查看技能说明（桌面仍用悬停 tooltip）
+class SkillButton extends Button:
+	var skill_name := ""
+	var skill_desc := ""
+	var main_scene: Control
+	var _press_msec := -1
+	func _gui_input(event: InputEvent) -> void:
+		if not main_scene.is_mobile():
+			return
+		var mb := event as InputEventMouseButton
+		if mb == null or mb.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if mb.pressed:
+			_press_msec = Time.get_ticks_msec()
+		else:
+			_press_msec = -1
+	func _process(_delta: float) -> void:
+		if _press_msec < 0:
+			return
+		if Time.get_ticks_msec() - _press_msec >= 450:
+			_press_msec = -1
+			main_scene._skill_long_press = true
+			main_scene._show_info(skill_name, skill_desc)
+
 ## 外层滚动容器：布局已保证内容不超窗口，接管 _gui_input 吞掉滚轮，
 ## 防止在手牌区/玩家面板滚动时误触发整页滚动（滚动条拖拽不受影响）
 class NoWheelScroll extends ScrollContainer:
@@ -67,6 +94,36 @@ class NoWheelScroll extends ScrollContainer:
 var game: AtlasGame
 var _dragging_card_index := -1
 var _drag_targets: Array[int] = []
+var _skill_long_press := false  # 长按查看技能说明后置位，用于吞掉本次抬起触发的发动
+
+static func is_mobile() -> bool:
+	return UITheme.is_mobile()
+
+## 底部操作按钮高度：触屏 ≥56 逻辑像素
+static func _abtn_h() -> int:
+	return 56 if UITheme.is_mobile() else ACTION_BTN_HEIGHT
+
+## 顶栏菜单按钮尺寸
+static func _menu_btn_size() -> Vector2:
+	return Vector2(130, 52) if UITheme.is_mobile() else MENU_BTN_SIZE
+
+## 玩家面板高度：移动端要容纳放大的字号与信息行
+static func _panel_h(compact: bool) -> int:
+	if UITheme.is_mobile():
+		return 150 if compact else 180
+	return PLAYER_PANEL_HEIGHT_COMPACT if compact else PLAYER_PANEL_HEIGHT
+
+## 面板内属性/装备/技能小按钮；compact（移动端 4 人局）时更矮，节省纵向空间
+static func _mini_btn_size(compact: bool = false) -> Vector2:
+	if UITheme.is_mobile():
+		return Vector2(64, 26) if compact else Vector2(70, 32)
+	return Vector2(50, 20)
+
+## 弹层按钮尺寸：移动端短边 ≥56
+static func _overlay_btn_size(w: float, h: float) -> Vector2:
+	if UITheme.is_mobile():
+		return Vector2(maxf(w, 200.0), maxf(h, 56.0))
+	return Vector2(w, h)
 
 # ---------------- 布局常量（集中管理，避免散落的魔法数字） ----------------
 const ROOT_MIN_HEIGHT := 760          # 根容器逻辑高度（视口固定 800）
@@ -111,6 +168,7 @@ var discard_hint_btn: Button
 var char_pick_layer: Control
 var char_pick_box: VBoxContainer
 var char_pick_scroll: ScrollContainer
+var char_pick_title: Label
 var interstitial: Control
 var interstitial_label: Label
 var skill_pick_layer: Control
@@ -124,6 +182,7 @@ var event_show_label: Label
 var info_popup: Control
 var info_popup_title: Label
 var info_popup_desc: Label
+var _root_margin: MarginContainer
 
 var highlight_sb: StyleBoxFlat
 var dying_sb: StyleBoxFlat
@@ -148,7 +207,7 @@ func _ready() -> void:
 	call_deferred("_refresh")
 
 func _apply_theme() -> void:
-	theme = UITheme.make_theme(16)
+	theme = UITheme.make_theme(UITheme.fs(16))
 	UITheme.add_background(self)
 
 # ---------------- UI 构建 ----------------
@@ -166,6 +225,7 @@ func _build_ui() -> void:
 	margin.add_theme_constant_override("margin_top", 8)
 	margin.add_theme_constant_override("margin_bottom", 8)
 	add_child(margin)
+	_root_margin = margin
 
 	# 外层滚动容器：内容超高时可滚动，保证底部按钮始终可访问
 	var outer_scroll := NoWheelScroll.new()
@@ -176,9 +236,9 @@ func _build_ui() -> void:
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 6)
 	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	# 固定逻辑高度（stretch 已设为 keep_height，视口高度恒为 800），避免进入场景瞬间
-	# 读到物理窗口尺寸而把根容器撑高，导致外层出现多余的纵向滚动条
-	root.custom_minimum_size = Vector2(0, ROOT_MIN_HEIGHT)
+	# 固定逻辑高度，避免进入场景瞬间读到物理窗口尺寸而把根容器撑高导致多余滚动条。
+	# 桌面视口高 800 → 760；移动端基准 720 → 660（有余量时由弹性容器吸收）
+	root.custom_minimum_size = Vector2(0, 660 if UITheme.is_mobile() else ROOT_MIN_HEIGHT)
 	outer_scroll.add_child(root)
 
 	# 顶栏：标题 + 当前回合
@@ -186,12 +246,12 @@ func _build_ui() -> void:
 	root.add_child(top)
 	var title := Label.new()
 	title.text = "天光墟纪事"
-	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_font_size_override("font_size", UITheme.fs(22))
 	title.add_theme_color_override("font_color", UITheme.ACCENT)
 	top.add_child(title)
 	var subtitle := Label.new()
 	subtitle.text = " ATLAS"
-	subtitle.add_theme_font_size_override("font_size", 14)
+	subtitle.add_theme_font_size_override("font_size", UITheme.fs(14))
 	subtitle.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	subtitle.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	top.add_child(subtitle)
@@ -199,18 +259,18 @@ func _build_ui() -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(spacer)
 	turn_label = Label.new()
-	turn_label.add_theme_font_size_override("font_size", 18)
+	turn_label.add_theme_font_size_override("font_size", UITheme.fs(18))
 	turn_label.add_theme_color_override("font_color", UITheme.ACCENT)
 	top.add_child(turn_label)
 	var dev_btn := Button.new()
 	dev_btn.text = "开发"
-	dev_btn.custom_minimum_size = MENU_BTN_SIZE
+	dev_btn.custom_minimum_size = _menu_btn_size()
 	dev_btn.visible = OS.is_debug_build()
 	dev_btn.pressed.connect(_toggle_dev_menu)
 	top.add_child(dev_btn)
 	var menu_btn := Button.new()
 	menu_btn.text = "主菜单"
-	menu_btn.custom_minimum_size = MENU_BTN_SIZE
+	menu_btn.custom_minimum_size = _menu_btn_size()
 	menu_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/launcher.tscn"))
 	top.add_child(menu_btn)
 
@@ -242,6 +302,9 @@ func _build_ui() -> void:
 	drop_log.main_scene = self
 	drop_log.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	drop_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# drop_log 是普通 Control，最小高度不会向上传播；显式给最小高度，
+	# 否则 4 人局面板内容多时日志区会被压扁到只剩两三行
+	drop_log.custom_minimum_size = Vector2(0, 90 if UITheme.is_mobile() else LOG_MIN_HEIGHT)
 	drop_log.mouse_filter = Control.MOUSE_FILTER_PASS
 	middle.add_child(drop_log)
 	drop_log.add_child(log_label)
@@ -259,15 +322,19 @@ func _build_ui() -> void:
 	var side_panel := PanelContainer.new()
 	# 横向填满滚动容器，否则右侧会留出一条背景空档
 	side_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# 长文本偶发不换行时裁剪在面板内，避免画出屏幕右缘
+	side_panel.clip_contents = true
 	side_scroll.add_child(side_panel)
 	var side := VBoxContainer.new()
 	side.add_theme_constant_override("separation", 8)
 	side_panel.add_child(side)
 	info_label = Label.new()
 	info_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	side.add_child(info_label)
 	phase_side_label = Label.new()
 	phase_side_label.add_theme_color_override("font_color", UITheme.ACCENT)
+	phase_side_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	side.add_child(phase_side_label)
 	var prompt_panel := PanelContainer.new()
 	var prompt_sb := UITheme.flat(Color(0.16, 0.13, 0.07), UITheme.ACCENT.darkened(0.35), 6, 1)
@@ -301,7 +368,7 @@ func _build_ui() -> void:
 	hand_title.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	root.add_child(hand_title)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, HAND_SCROLL_HEIGHT)
+	scroll.custom_minimum_size = Vector2(0, 84 if UITheme.is_mobile() else HAND_SCROLL_HEIGHT)
 	# 参与纵向弹性分配：窗口高时手牌区变大，卡牌高度随之撑满该区域
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_stretch_ratio = 0.6
@@ -327,23 +394,23 @@ func _build_ui() -> void:
 	bar.add_child(skill_bar)
 	end_play_btn = Button.new()
 	end_play_btn.text = "结束出牌阶段"
-	end_play_btn.custom_minimum_size = Vector2(ACTION_BTN_WIDTH, ACTION_BTN_HEIGHT)
+	end_play_btn.custom_minimum_size = Vector2(ACTION_BTN_WIDTH, _abtn_h())
 	UITheme.style_button(end_play_btn, UITheme.accent_button_styles())
 	end_play_btn.pressed.connect(_on_end_play)
 	bar.add_child(end_play_btn)
 	end_response_btn = Button.new()
-	end_response_btn.custom_minimum_size = Vector2(220, ACTION_BTN_HEIGHT)
+	end_response_btn.custom_minimum_size = Vector2(240, _abtn_h())
 	UITheme.style_button(end_response_btn, UITheme.danger_button_styles())
 	end_response_btn.pressed.connect(_on_end_response)
 	bar.add_child(end_response_btn)
 	cancel_target_btn = Button.new()
-	cancel_target_btn.text = "取消操作（右键）"
-	cancel_target_btn.custom_minimum_size = Vector2(120, ACTION_BTN_HEIGHT)
+	cancel_target_btn.text = "取消操作"
+	cancel_target_btn.custom_minimum_size = Vector2(140, _abtn_h())
 	cancel_target_btn.pressed.connect(_on_cancel_target)
 	bar.add_child(cancel_target_btn)
 	discard_hint_btn = Button.new()
 	discard_hint_btn.text = "弃牌中…"
-	discard_hint_btn.custom_minimum_size = Vector2(ACTION_BTN_WIDTH, ACTION_BTN_HEIGHT)
+	discard_hint_btn.custom_minimum_size = Vector2(ACTION_BTN_WIDTH, _abtn_h())
 	discard_hint_btn.disabled = true
 	discard_hint_btn.visible = false
 	UITheme.style_button(discard_hint_btn, UITheme.accent_button_styles())
@@ -354,19 +421,29 @@ func _build_ui() -> void:
 	char_pick_layer = ov0["layer"]
 	char_pick_box = ov0["box"]
 	char_pick_scroll = ov0["scroll"] as ScrollContainer
+	# 标题吸顶：放在滚动区外，滚动角色列表时「已选 N/M」始终可见
+	char_pick_title = Label.new()
+	char_pick_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	char_pick_title.add_theme_font_size_override("font_size", UITheme.fs(22))
+	char_pick_title.add_theme_color_override("font_color", UITheme.ACCENT)
+	var cp_outer: VBoxContainer = ov0["outer"]
+	cp_outer.add_child(char_pick_title)
+	cp_outer.move_child(char_pick_title, 0)
 	get_viewport().size_changed.connect(_fit_char_pick)
 	get_viewport().size_changed.connect(_fit_hand_cards)
+	get_viewport().size_changed.connect(_apply_safe_area)
 	_fit_char_pick()
+	call_deferred("_apply_safe_area")
 
 	var ov1 := _make_overlay()
 	interstitial = ov1["layer"]
 	interstitial_label = Label.new()
 	interstitial_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	interstitial_label.add_theme_font_size_override("font_size", 22)
+	interstitial_label.add_theme_font_size_override("font_size", UITheme.fs(22))
 	ov1["box"].add_child(interstitial_label)
 	var ibtn := Button.new()
 	ibtn.text = "开始回合"
-	ibtn.custom_minimum_size = Vector2(220, 52)
+	ibtn.custom_minimum_size = _overlay_btn_size(220, 52)
 	UITheme.style_button(ibtn, UITheme.accent_button_styles())
 	ibtn.pressed.connect(_on_interstitial)
 	ov1["box"].add_child(ibtn)
@@ -383,12 +460,12 @@ func _build_ui() -> void:
 	game_over_layer = ov3["layer"]
 	game_over_label = Label.new()
 	game_over_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	game_over_label.add_theme_font_size_override("font_size", 30)
+	game_over_label.add_theme_font_size_override("font_size", UITheme.fs(30))
 	game_over_label.add_theme_color_override("font_color", UITheme.ACCENT)
 	ov3["box"].add_child(game_over_label)
 	var rbtn := Button.new()
 	rbtn.text = "再来一局"
-	rbtn.custom_minimum_size = Vector2(220, 52)
+	rbtn.custom_minimum_size = _overlay_btn_size(220, 52)
 	UITheme.style_button(rbtn, UITheme.accent_button_styles())
 	rbtn.pressed.connect(func(): get_tree().reload_current_scene())
 	ov3["box"].add_child(rbtn)
@@ -399,11 +476,11 @@ func _build_ui() -> void:
 	event_show_label = Label.new()
 	event_show_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	event_show_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	event_show_label.add_theme_font_size_override("font_size", 18)
+	event_show_label.add_theme_font_size_override("font_size", UITheme.fs(18))
 	ov4["box"].add_child(event_show_label)
 	var ebtn := Button.new()
 	ebtn.text = "确认"
-	ebtn.custom_minimum_size = Vector2(200, 48)
+	ebtn.custom_minimum_size = _overlay_btn_size(200, 48)
 	UITheme.style_button(ebtn, UITheme.accent_button_styles())
 	ebtn.pressed.connect(_on_event_show_confirm)
 	ov4["box"].add_child(ebtn)
@@ -413,16 +490,16 @@ func _build_ui() -> void:
 	info_popup = ov5["layer"]
 	info_popup_title = Label.new()
 	info_popup_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	info_popup_title.add_theme_font_size_override("font_size", 20)
+	info_popup_title.add_theme_font_size_override("font_size", UITheme.fs(20))
 	info_popup_title.add_theme_color_override("font_color", UITheme.ACCENT)
 	ov5["box"].add_child(info_popup_title)
 	info_popup_desc = Label.new()
 	info_popup_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info_popup_desc.add_theme_font_size_override("font_size", 14)
+	info_popup_desc.add_theme_font_size_override("font_size", UITheme.fs(14))
 	ov5["box"].add_child(info_popup_desc)
 	var cbtn := Button.new()
 	cbtn.text = "关闭"
-	cbtn.custom_minimum_size = Vector2(160, 40)
+	cbtn.custom_minimum_size = _overlay_btn_size(160, 40)
 	cbtn.pressed.connect(func(): info_popup.visible = false)
 	ov5["box"].add_child(cbtn)
 
@@ -451,16 +528,21 @@ func _make_overlay(scroll: bool = false) -> Dictionary:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 12)
 	if scroll:
-		# 内容超高时纵向滚动（选人列表），高度由 _fit_char_pick 按视口动态限制
+		# 内容超高时纵向滚动（选人列表），高度由 _fit_char_pick 按视口动态限制。
+		# PanelContainer 会把所有子控件铺满同一块区域，因此用 VBox 承载「吸顶标题 + 滚动区」
+		var outer := VBoxContainer.new()
+		outer.add_theme_constant_override("separation", 8)
+		panel.add_child(outer)
 		var sc := ScrollContainer.new()
 		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-		panel.add_child(sc)
+		sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		outer.add_child(sc)
 		sc.add_child(box)
 		box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		return {"layer": layer, "box": box, "scroll": sc}
+		return {"layer": layer, "box": box, "scroll": sc, "panel": panel, "outer": outer}
 	panel.add_child(box)
-	return {"layer": layer, "box": box, "scroll": null}
+	return {"layer": layer, "box": box, "scroll": null, "panel": panel}
 
 func _fit_char_pick() -> void:
 	## 选人列表滚动区高度跟随窗口，避免面板超出屏幕导致角色看不全
@@ -468,6 +550,29 @@ func _fit_char_pick() -> void:
 		return
 	var vh := get_viewport_rect().size.y
 	char_pick_scroll.custom_minimum_size = Vector2(472, maxf(300.0, vh * 0.80))
+
+## 安全区（刘海/挖孔/手势条）：把 DisplayServer 报告的安全区换算成逻辑坐标后加到根边距。
+## 桌面或无安全区差异时保持基础边距，绝不硬编码具体机型数值。
+func _apply_safe_area() -> void:
+	if _root_margin == null:
+		return
+	if not UITheme.is_mobile():
+		return
+	var win: Vector2i = DisplayServer.window_get_size()
+	var safe: Rect2i = DisplayServer.get_display_safe_area()
+	if safe.size.x <= 0 or safe.size.y <= 0:
+		return
+	var scale := minf(win.x / 1280.0, win.y / 720.0)
+	if scale <= 0.0:
+		return
+	var ml := maxi(14, int(safe.position.x / scale))
+	var mt := maxi(8, int(safe.position.y / scale))
+	var mr := maxi(14, int((win.x - safe.position.x - safe.size.x) / scale))
+	var mb := maxi(8, int((win.y - safe.position.y - safe.size.y) / scale))
+	_root_margin.add_theme_constant_override("margin_left", ml)
+	_root_margin.add_theme_constant_override("margin_right", mr)
+	_root_margin.add_theme_constant_override("margin_top", mt)
+	_root_margin.add_theme_constant_override("margin_bottom", mb)
 
 # ---------------- 状态刷新 ----------------
 
@@ -481,7 +586,7 @@ func _rebuild_player_panels(count: int) -> void:
 	player_skill_rows.clear()
 	player_info_rows.clear()
 	players_bar.columns = 2 if count <= 2 or count == 4 else 3
-	var panel_h := PLAYER_PANEL_HEIGHT_COMPACT if count >= 4 else PLAYER_PANEL_HEIGHT
+	var panel_h := _panel_h(count >= 4)
 	for i in count:
 		var pb := DropPanel.new()
 		pb.player_index = i
@@ -555,12 +660,14 @@ func _refresh() -> void:
 	# 玩家面板：生命/状态/预备区/陷阱（规则 3.4 / 6.1）
 	for i in g.players.size():
 		var p := g.players[i]
+		# 移动端 4 人局：面板纵向空间紧张， chips 合并为一行、名片字号收小
+		var compact := g.players.size() >= 4 and UITheme.is_mobile()
 		var name_line := p.name
 		if g.board_player_count() > 2:
 			var tname := g._team_name(p.team_id)
 			if not tname.is_empty():
 				name_line = "%s　[lb]%s[rb]" % [p.name, tname]
-		var bb := "[center][b][font_size=18]%s[/font_size][/b][/center]\n" % name_line
+		var bb := "[center][b][font_size=%d]%s[/font_size][/b][/center]\n" % [UITheme.fs(16) if compact else UITheme.fs(18), name_line]
 		bb += "[center][color=lightgray]生命 %d / %d　手牌 %d[/color][/center]\n" % [p.hp, p.max_hp, p.hand.size()]
 		var st_parts: Array[String] = []
 		for s in p.status_ids():
@@ -594,15 +701,21 @@ func _refresh() -> void:
 		bb += "[center][color=plum]预备区：%s[/color]　[color=orange]陷阱 ×%d[/color][/center]" % [(rv_joined if rv_joined != "" else "无"), p.traps.size()]
 		player_labels[i].text = bb
 		# 信息行：属性 + 装备（状态已移动到上方状态栏，点击可查阅）
+		# compact 时技能 chips 也并入本行，省掉一整行高度
 		var info_row: HBoxContainer = player_info_rows[i]
+		var skill_row: HBoxContainer = player_skill_rows[i]
+		var chip_row: HBoxContainer = info_row if compact else skill_row
+		var chip_size := _mini_btn_size(compact)
 		for c in info_row.get_children():
+			c.queue_free()
+		for c in skill_row.get_children():
 			c.queue_free()
 		for aid in p.attribute_ids:
 			var attr := g.db.get_attribute(aid)
 			var attr_btn := Button.new()
 			attr_btn.text = String(attr.get("name", aid))
-			attr_btn.add_theme_font_size_override("font_size", 10)
-			attr_btn.custom_minimum_size = Vector2(50, 20)
+			attr_btn.add_theme_font_size_override("font_size", UITheme.fs(10))
+			attr_btn.custom_minimum_size = chip_size
 			attr_btn.tooltip_text = String(attr.get("name", "属性"))
 			var attr_desc := String(attr.get("description", ""))
 			var attr_name := String(attr.get("name", "属性"))
@@ -611,35 +724,32 @@ func _refresh() -> void:
 		if not p.equipment.is_empty():
 			var eq_label := Label.new()
 			eq_label.text = "装备:"
-			eq_label.add_theme_font_size_override("font_size", 10)
+			eq_label.add_theme_font_size_override("font_size", UITheme.fs(10))
 			eq_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 			info_row.add_child(eq_label)
 			for eq in p.equipment:
 				var eq_card := g.db.get_card(eq)
 				var eb := Button.new()
 				eb.text = String(eq_card.get("name", eq))
-				eb.add_theme_font_size_override("font_size", 10)
-				eb.custom_minimum_size = Vector2(50, 20)
+				eb.add_theme_font_size_override("font_size", UITheme.fs(10))
+				eb.custom_minimum_size = chip_size
 				eb.tooltip_text = String(eq_card.get("name", eq))
 				var eq_desc := String(eq_card.get("description", ""))
 				var eq_name := String(eq_card.get("name", eq))
 				eb.pressed.connect(func(): _show_info(eq_name, eq_desc))
 				info_row.add_child(eb)
-		# 技能行
-		var skill_row: HBoxContainer = player_skill_rows[i]
-		for c in skill_row.get_children():
-			c.queue_free()
+		# 技能行（compact 时并入信息行）
 		for sid in p.skill_ids:
 			var sk := g.db.get_skill(sid)
 			var sb := Button.new()
 			sb.text = String(sk.get("name", sid))
-			sb.add_theme_font_size_override("font_size", 10)
-			sb.custom_minimum_size = Vector2(50, 20)
+			sb.add_theme_font_size_override("font_size", UITheme.fs(10))
+			sb.custom_minimum_size = chip_size
 			sb.tooltip_text = String(sk.get("name", sid))
 			var sk_desc := String(sk.get("description", ""))
 			var sk_name := String(sk.get("name", sid))
 			sb.pressed.connect(func(): _show_info(sk_name, sk_desc))
-			skill_row.add_child(sb)
+			chip_row.add_child(sb)
 		# 面板样式优先级：濒死红色 > 目标候选/拖拽目标绿色 > 当前回合金色 > 普通
 		player_panels[i].disabled = true
 		var sb: StyleBoxFlat
@@ -696,9 +806,9 @@ func _refresh() -> void:
 		var first_idx := int(indices[0])
 		var first_card := g.db.get_card(view.reserve[first_idx])
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(140, 40)
+		b.custom_minimum_size = Vector2(160, 52) if UITheme.is_mobile() else Vector2(140, 40)
 		b.text = "%s x%d" % [String(first_card.get("name", "")), indices.size()]
-		b.add_theme_font_size_override("font_size", 13)
+		b.add_theme_font_size_override("font_size", UITheme.fs(13))
 		UITheme.style_button(b, UITheme.card_styles(UITheme.card_color(first_card)))
 		b.disabled = not (reserve_clickable and bool(first_card.get("is_defense", false)))
 		var idx := first_idx
@@ -709,9 +819,9 @@ func _refresh() -> void:
 		var cid := view.reserve[i]
 		var card := g.db.get_card(cid)
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(140, 40)
+		b.custom_minimum_size = Vector2(160, 52) if UITheme.is_mobile() else Vector2(140, 40)
 		b.text = String(card.get("name", cid))
-		b.add_theme_font_size_override("font_size", 13)
+		b.add_theme_font_size_override("font_size", UITheme.fs(13))
 		UITheme.style_button(b, UITheme.card_styles(UITheme.card_color(card)))
 		b.disabled = true
 		reserve_box.add_child(b)
@@ -753,7 +863,7 @@ func _refresh() -> void:
 		b.custom_minimum_size = Vector2(HAND_CARD_WIDTH, card_h)
 		b.text = "%s\n%s" % [String(card.get("name", cid)), String(card.get("description", ""))]
 		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		b.add_theme_font_size_override("font_size", 12)
+		b.add_theme_font_size_override("font_size", UITheme.fs(12))
 		UITheme.style_button(b, UITheme.card_styles(UITheme.card_color(card)))
 		b.disabled = not clickable
 		var idx := i
@@ -799,7 +909,10 @@ func _refresh() -> void:
 			var stype := String(sk.get("skill_type", ""))
 			if stype != "active" and stype != "switch" and stype != "limited":
 				continue
-			var b := Button.new()
+			var b := SkillButton.new()
+			b.main_scene = self
+			b.skill_name = String(sk.get("name", sid))
+			b.skill_desc = String(sk.get("description", ""))
 			var left := int(cur.skill_uses_left.get(sid, 0))
 			if stype == "limited":
 				var used := bool(cur.limited_used.get(sid, false))
@@ -808,12 +921,16 @@ func _refresh() -> void:
 			else:
 				b.text = "%s（剩%d）" % [String(sk.get("name", sid)), left]
 				b.disabled = left <= 0
-			b.custom_minimum_size = Vector2(0, 36)
+			b.custom_minimum_size = Vector2(0, _abtn_h())
 			# 狄瑟〖沙葬〗：未觉醒时置灰不可用
 			if sid == "skill_sand_burial" and not cur.star_brilliance_awakened:
 				b.disabled = true
 				b.text = "%s（未觉醒）" % String(sk.get("name", sid))
-			b.tooltip_text = String(sk.get("description", ""))
+			if is_mobile():
+				# 移动端无悬停，说明靠长按弹出；tooltip 留着只会在桌面生效
+				b.tooltip_text = ""
+			else:
+				b.tooltip_text = String(sk.get("description", ""))
 			UITheme.style_button(b, UITheme.skill_button_styles())
 			var id := sid
 			b.pressed.connect(func(): _on_skill(id))
@@ -876,15 +993,10 @@ func _rebuild_char_pick() -> void:
 	var g := game
 	var picked := g.picked_char_ids.size()
 	var total := g.board_player_count()
-	var title := Label.new()
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 22)
-	title.add_theme_color_override("font_color", UITheme.ACCENT)
-	title.text = "请第 %d 位选择角色（已选 %d / %d）" % [picked + 1, picked, total]
-	char_pick_box.add_child(title)
+	char_pick_title.text = "请第 %d 位选择角色（已选 %d / %d）" % [picked + 1, picked, total]
 	var hint := Label.new()
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.add_theme_font_size_override("font_size", 13)
+	hint.add_theme_font_size_override("font_size", UITheme.fs(13))
 	hint.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	hint.text = "选人结束后随机分配座位与先手"
 	char_pick_box.add_child(hint)
@@ -892,7 +1004,7 @@ func _rebuild_char_pick() -> void:
 		var cid := String(c.get("id", ""))
 		var b := Button.new()
 		b.custom_minimum_size = Vector2(460, 76)
-		b.add_theme_font_size_override("font_size", 14)
+		b.add_theme_font_size_override("font_size", UITheme.fs(14))
 		var skill_names: Array[String] = []
 		for sid in c.get("skill_ids", []):
 			skill_names.append(String(g.db.get_skill(String(sid)).get("name", String(sid))))
@@ -926,7 +1038,7 @@ func _rebuild_skill_pick() -> void:
 	var sk := game.db.get_skill(String(game.pending.get("skill_id", "")))
 	var title := Label.new()
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", UITheme.fs(20))
 	title.add_theme_color_override("font_color", UITheme.ACCENT)
 	if kind == AtlasGame.PENDING_EXILE_ASK:
 		title.text = "是否发动限定技〖放逐〗？"
@@ -959,12 +1071,12 @@ func _rebuild_skill_pick() -> void:
 	if kind == AtlasGame.PENDING_EXILE_ASK:
 		var yes := Button.new()
 		yes.text = "发动〖放逐〗"
-		yes.custom_minimum_size = Vector2(280, 48)
+		yes.custom_minimum_size = _overlay_btn_size(280, 48)
 		yes.pressed.connect(func(): _on_skill_pick("yes"))
 		skill_pick_box.add_child(yes)
 		var no := Button.new()
 		no.text = "放弃"
-		no.custom_minimum_size = Vector2(280, 44)
+		no.custom_minimum_size = _overlay_btn_size(280, 44)
 		no.pressed.connect(func(): _on_skill_pick("no"))
 		skill_pick_box.add_child(no)
 		return
@@ -1022,13 +1134,13 @@ func _rebuild_skill_pick() -> void:
 			card = game.db.get_card(cid)
 			label = "%s：%s" % [zone_name, String(card.get("name", cid))]
 		b.text = label
-		b.custom_minimum_size = Vector2(320, 48)
+		b.custom_minimum_size = _overlay_btn_size(320, 48)
 		UITheme.style_button(b, UITheme.card_styles(UITheme.card_color(card)))
 		b.pressed.connect(func(): _on_skill_pick(tok))
 		skill_pick_box.add_child(b)
 	var cancel := Button.new()
 	cancel.text = "取消"
-	cancel.custom_minimum_size = Vector2(280, 44)
+	cancel.custom_minimum_size = _overlay_btn_size(280, 44)
 	cancel.pressed.connect(_on_cancel_skill_pick)
 	skill_pick_box.add_child(cancel)
 
@@ -1047,7 +1159,7 @@ func _rebuild_discard_pick() -> void:
 	else:
 		title.text = "请选择 %s 的 %d 张手牌弃置" % [p.name, count]
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", UITheme.fs(20))
 	title.add_theme_color_override("font_color", UITheme.ACCENT)
 	discard_pick_box.add_child(title)
 	for i in p.hand.size():
@@ -1064,7 +1176,7 @@ func _rebuild_discard_pick() -> void:
 	if picker != "self":
 		var cancel := Button.new()
 		cancel.text = "取消"
-		cancel.custom_minimum_size = Vector2(320, 44)
+		cancel.custom_minimum_size = _overlay_btn_size(320, 44)
 		cancel.pressed.connect(_on_cancel_discard_pick)
 		discard_pick_box.add_child(cancel)
 
@@ -1133,6 +1245,10 @@ func _fit_hand_cards() -> void:
 			ctl.custom_minimum_size.y = card_h
 
 func _on_skill(id: String) -> void:
+	# 长按查看说明后抬起会触发 pressed，本次不发动技能
+	if _skill_long_press:
+		_skill_long_press = false
+		return
 	game.ui_use_skill(id)
 	_refresh()
 
@@ -1156,6 +1272,11 @@ func _input(event: InputEvent) -> void:
 			_toggle_dev_menu()
 			get_viewport().set_input_as_handled()
 		return
+	# Esc：与移动端返回键同语义——取消当前瞬态，绝不退出应用
+	if key != null and key.pressed and not key.echo and key.keycode == KEY_ESCAPE:
+		if _on_back_pressed():
+			get_viewport().set_input_as_handled()
+		return
 	# 右键取消当前选目标操作（用 _input 而非 _unhandled_input，避免被面板等控件吞掉事件）
 	var mb := event as InputEventMouseButton
 	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_RIGHT:
@@ -1163,6 +1284,23 @@ func _input(event: InputEvent) -> void:
 	if game != null and game.mode == AtlasGame.Mode.SELECT_TARGET:
 		_on_cancel_target()
 		get_viewport().set_input_as_handled()
+
+## 返回键 / Esc 统一入口：按优先级取消当前瞬态。返回 true 表示已消费。
+## 说明弹层 > 技能选择 > 选目标 > 事件确认；对局主界面与选人/终局层不响应，防止误退。
+func _on_back_pressed() -> bool:
+	if info_popup != null and info_popup.visible:
+		info_popup.visible = false
+		return true
+	if skill_pick_layer != null and skill_pick_layer.visible:
+		_on_cancel_skill_pick()
+		return true
+	if game != null and game.mode == AtlasGame.Mode.SELECT_TARGET:
+		_on_cancel_target()
+		return true
+	if event_show_layer != null and event_show_layer.visible:
+		_on_event_show_confirm()
+		return true
+	return false
 
 func _toggle_dev_menu() -> void:
 	if dev_menu == null:
@@ -1255,6 +1393,13 @@ func _notification(what: int) -> void:
 		if _dragging_card_index != -1 or not _drag_targets.is_empty():
 			_dragging_card_index = -1
 			_drag_targets.clear()
+			_refresh()
+	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		# Android 返回键：只用于取消当前瞬态，绝不退出应用
+		_on_back_pressed()
+	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
+		# 切后台再回来：pending 上下文在引擎内存中不丢，重绘一次 UI 即可
+		if game != null:
 			_refresh()
 
 # 判断手牌能否拖放到指定玩家面板（仅出牌阶段、需选目标的牌）

@@ -10,6 +10,12 @@ probe_out.txt
 # 发布产物（源码 zip、导出包）
 /release/
 
+# Android 构建目录（Godot 导出时生成的 Gradle 工程）
+/android/
+
+# 签名密钥（keystore 与密码不入库）
+*.keystore
+
 # 系统文件
 Thumbs.db
 .DS_Store
