@@ -3,6 +3,9 @@
 *.translation
 *.tmp
 
+# 图标源文件
+/icon/
+
 # 临时探针与调试输出
 probe_*.gd
 probe_out.txt
