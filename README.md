@@ -1,10 +1,11 @@
 ## How to deploy to the local environment 如何部署到本地
 
-首先我还没打包所以目前需要：
-godot 4.7.2
+### Windows Desktop Windows桌面端
+下载.version文件夹里的exe文件（测试版后缀一般为alpha），双击启动即可
 
-然后，把整个项目所有文件全部打包下载并解压  
-然后导入godot，点右上角开始就可以玩了（
+### Android 安卓移动端
+下载.version文件夹里的apk文件（测试版后缀一般为beta），解压安装即可
+
 
 ## json数据驱动，支持高自由度的卡牌和角色机制修改
 ## 测试版自带开发者菜单可修改局内数据
