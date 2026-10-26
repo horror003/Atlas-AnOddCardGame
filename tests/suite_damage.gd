@@ -8,6 +8,7 @@ func run(t) -> void:
 	_test_defense_response(t)
 	_test_soul_unresponsive(t)
 	_test_hp_loss(t)
+	_test_self_death_ends_turn(t)
 
 func _test_status_bonus(t) -> void:
 	var g: AtlasGame = t.make_game(2)
@@ -48,3 +49,20 @@ func _test_hp_loss(t) -> void:
 	g._lose_hp_direct(g.players[0], 3, "测试")
 	t.check_eq(g.players[0].hp, 12, "失去生命直接扣血")
 	t.check(not g.players[0].dying, "生命未归零时不进入濒死")
+
+func _test_self_death_ends_turn(t) -> void:
+	var g: AtlasGame = t.make_game(3)
+	# 三人各自为队，确保一人死亡不会直接终局，才能验证回合交接
+	for i in g.players.size():
+		g.players[i].team_id = "team_%d" % i
+	g.players[0].hp = 5
+	g._lose_hp_direct(g.players[0], 5, "测试自伤")
+	t.check(g.players[0].dying, "自伤致死进入「濒死」")
+	t.check(g._ensure_dying_window(), "先开启濒死救援窗口")
+	var guard := 0
+	while g.mode == AtlasGame.Mode.RESPONSE and guard < 10:
+		g.ui_end_response()
+		guard += 1
+	t.check(g.players[0].dead, "无人救援后宣布死亡")
+	t.check_eq(g.mode, AtlasGame.Mode.INTERSTITIAL, "死者回合立即结束并进入下一名玩家的回合交接")
+	t.check_eq(g.current, 1, "行动权交给下一名存活玩家")

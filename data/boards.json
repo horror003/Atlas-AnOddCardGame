@@ -1,0 +1,33 @@
+{
+  "boards": [
+    {
+      "id": "board_1v1",
+      "name": "双人对决",
+      "player_count": 2,
+      "default": true,
+      "teams": [
+        { "id": "team_a", "name": "队伍A", "seats": [0] },
+        { "id": "team_b", "name": "队伍B", "seats": [1] }
+      ]
+    },
+    {
+      "id": "board_1v1v1",
+      "name": "三方混战",
+      "player_count": 3,
+      "teams": [
+        { "id": "team_a", "name": "队伍A", "seats": [0] },
+        { "id": "team_b", "name": "队伍B", "seats": [1] },
+        { "id": "team_c", "name": "队伍C", "seats": [2] }
+      ]
+    },
+    {
+      "id": "board_2v2",
+      "name": "双人组队",
+      "player_count": 4,
+      "teams": [
+        { "id": "team_a", "name": "队伍A", "seats": [0, 2] },
+        { "id": "team_b", "name": "队伍B", "seats": [1, 3] }
+      ]
+    }
+  ]
+}

@@ -84,6 +84,11 @@ var pending: Dictionary = {}          # 待结算动作上下文（选目标 / �
 var damage_queue: Array[Dictionary] = []  # 伤害队列：一次攻击多类型=多次独立伤害（规则 5.1）
 var damage_return_to: String = "play" # 伤害队列清空后的回归点："play" / "judge"
 var winner: String = ""
+var winner_team_id: String = ""       # 获胜队伍 id（单人队时同 winner）
+var winner_team_name: String = ""     # 获胜队伍显示名（组队模式使用）
+var winner_members: Array[String] = []  # 获胜队伍成员显示名
+var board: Dictionary = {}             # 当前板子配置（人数 / 队伍 / 座位映射）
+var _skip_chain: int = 0               # 连续「跳过」计数，用于限制递归深度
 var dev_forced_judge: String = ""     # 开发者菜单：强制下一次判定结果（""=不干预 / success / fail / roll:N）
 
 var picked_char_ids: Array[String] = []  # 选人阶段已选角色 id（规则 4.1）
@@ -122,13 +127,63 @@ func _resolve_card_after_play(card_id: String) -> void:
 	else:
 		_to_discard(card_id)
 
+# ---------------- 板子与队伍（多人口径见 docs/多人对战交接文档.md） ----------------
+
+func board_player_count() -> int:
+	return int(board.get("player_count", 2))
+
+func _team_for_seat(seat: int) -> String:
+	for t in board.get("teams", []):
+		for s in t.get("seats", []):
+			if int(s) == seat:
+				return String(t.get("id", ""))
+	return ""
+
+func _team_name(team_id: String) -> String:
+	for t in board.get("teams", []):
+		if String(t.get("id", "")) == team_id:
+			return String(t.get("name", team_id))
+	return ""
+
+func is_same_team(a: int, b: int) -> bool:
+	if a == b:
+		return true
+	if a < 0 or a >= players.size() or b < 0 or b >= players.size():
+		return false
+	var ta := players[a].team_id
+	return not ta.is_empty() and ta == players[b].team_id
+
+func _alive_teams() -> Array[String]:
+	var out: Array[String] = []
+	for i in players.size():
+		if players[i].dead:
+			continue
+		var tid := players[i].team_id
+		if tid.is_empty():
+			tid = "solo_%d" % i
+		if not out.has(tid):
+			out.append(tid)
+	return out
+
 # ---------------- 游戏开始与选人（规则 4.1） ----------------
 
-func start_game() -> void:
-	# 选人阶段：玩家1先选，玩家2后选，不可重复
+func start_game(board_id: String = "") -> void:
+	# 选人阶段：按板子人数依次选择角色，不可重复（规则 4.1）
+	board = db.get_board(board_id) if not board_id.is_empty() else db.default_board()
+	if board.is_empty():
+		board = {
+			"id": "board_1v1", "name": "双人对决", "player_count": 2,
+			"teams": [
+				{"id": "team_a", "name": "队伍A", "seats": [0]},
+				{"id": "team_b", "name": "队伍B", "seats": [1]},
+			],
+		}
+	players.clear()
+	picked_char_ids.clear()
 	mode = Mode.SELECT_CHAR
 	_dying_window_open = false
-	_log("—— 选人阶段：请 玩家1 选择角色 ——")
+	_log("—— 选人阶段：%s（%d 人）——" % [String(board.get("name", "对局")), board_player_count()])
+	_log("请 玩家1 选择角色。")
 
 func ui_pick_character(char_id: String) -> void:
 	if mode != Mode.SELECT_CHAR:
@@ -139,17 +194,23 @@ func ui_pick_character(char_id: String) -> void:
 	if c.is_empty():
 		return
 	picked_char_ids.append(char_id)
-	if picked_char_ids.size() == 1:
-		_log("玩家1 选择了 %s。请 玩家2 选择角色。" % String(c.get("name", char_id)))
+	var picked := picked_char_ids.size()
+	var cname := String(c.get("name", char_id))
+	if picked < board_player_count():
+		_log("玩家%d 选择了 %s。请 玩家%d 选择角色。" % [picked, cname, picked + 1])
 		return
-	_log("玩家2 选择了 %s。" % String(c.get("name", char_id)))
+	_log("玩家%d 选择了 %s。" % [picked, cname])
 	_setup_players()
 
 func _setup_players() -> void:
-	# 1. 根据所选角色创建玩家
-	for i in range(2):
-		var c := db.get_character(picked_char_ids[i])
+	# 1. 随机落座：所选角色打乱后依次填入座位（口径 2.5-5），队伍由座位映射决定
+	var seat_chars := picked_char_ids.duplicate()
+	seat_chars.shuffle()
+	for i in seat_chars.size():
+		var c := db.get_character(String(seat_chars[i]))
 		var p := PlayerData.new()
+		p.seat_index = i
+		p.team_id = _team_for_seat(i)
 		p.name = "玩家%d·%s" % [i + 1, String(c.get("name", "?"))]
 		p.char_id = String(c.get("id", ""))
 		p.attribute_ids.clear()
@@ -175,7 +236,7 @@ func _setup_players() -> void:
 	for e in db.event_deck_list:
 		event_deck.append(e)
 	event_deck.shuffle()
-	# 3. 抽取初始手牌：数量 = 存牌数值（规则 3.1）
+	# 3. 抽取初始手牌：数量 = 摸牌数值（规则 3.1 / 口径 2.5-6）
 	# 洞悉玩家需自选弃牌，改为队列式逐个处理
 	_setup_draw_queue.clear()
 	for i in players.size():
@@ -194,7 +255,7 @@ func _process_setup_draw() -> void:
 	var idx := _setup_draw_queue[0]
 	_setup_draw_queue.remove_at(0)
 	var p := players[idx]
-	_draw_cards(p, p.hand_limit)
+	_draw_cards(p, p.draw_limit)
 	# 若触发洞悉进入弃牌选择，等待玩家操作后继续
 	if mode == Mode.DISCARD_PICK:
 		return
@@ -227,9 +288,14 @@ func _prepare_turn() -> void:
 	if p.has_status("skip"):
 		p.remove_status("skip")
 		_log("%s 带有「跳过」，跳过其整个回合。" % p.name)
+		_skip_chain += 1
 		_advance_player()
+		# 连续跳过最多一圈，避免多人连续跳过导致递归加深
+		if _skip_chain >= players.size():
+			_skip_chain = 0
 		_prepare_turn()
 		return
+	_skip_chain = 0
 	# 每回合重置主动技使用次数与被动计数
 	p.skill_uses_left.clear()
 	for sid in p.skill_ids:
@@ -280,6 +346,8 @@ func _prepare_turn() -> void:
 			p.attribute_uses_left[uses_key] = max_uses
 	pending = {}
 	mode = Mode.INTERSTITIAL
+	# 回合准备期间（如回合开始的「燃烧」）可能导致当前玩家死亡，需立刻结束其回合
+	_end_turn_if_current_dead()
 
 # 热座交接确认，开始当前玩家的回合
 func ui_confirm_interstitial() -> void:
@@ -405,9 +473,23 @@ func dev_kill(idx: int) -> void:
 	_check_deaths()
 
 func dev_win(idx: int) -> void:
-	winner = players[idx].name
+	# 组队模式下按该玩家所属队伍宣布胜利
+	var tid := players[idx].team_id
+	winner_members.clear()
+	for i in players.size():
+		if not players[i].dead and is_same_team(i, idx):
+			winner_members.append(players[i].name)
+	winner_team_id = tid
+	if winner_members.size() > 1:
+		winner_team_name = _team_name(tid)
+		winner = winner_team_name
+	else:
+		winner_team_name = ""
+		winner = players[idx].name
+		winner_members.clear()
+		winner_members.append(players[idx].name)
 	mode = Mode.GAME_OVER
-	_log("【开发者】%s 被宣布胜利。" % players[idx].name)
+	_log("【开发者】%s 被宣布胜利。" % winner)
 
 func _dev_zone_array(p: PlayerData, zone: String) -> Array[String]:
 	match zone:
@@ -541,6 +623,16 @@ func _end_turn() -> void:
 	_advance_player()
 	_prepare_turn()
 
+# 当前行动玩家死亡后必须立刻结束其回合，否则死者会继续拥有出牌/技能操作
+func _end_turn_if_current_dead() -> bool:
+	if mode == Mode.GAME_OVER or players.is_empty():
+		return false
+	if current < 0 or current >= players.size() or not players[current].dead:
+		return false
+	damage_return_to = "play"
+	_end_turn()
+	return true
+
 func _advance_player() -> void:
 	current = (current + 1) % players.size()
 	# 已死亡玩家不再行动
@@ -548,6 +640,9 @@ func _advance_player() -> void:
 	while players[current].dead and guard < players.size():
 		current = (current + 1) % players.size()
 		guard += 1
+	# 全员死亡：立即判定终局，避免在死者之间循环
+	if guard >= players.size():
+		_check_deaths()
 
 # ---------------- 摸牌 / 牌堆（规则 3.1） ----------------
 
@@ -995,11 +1090,11 @@ func target_candidates_now() -> Array[int]:
 	if mode != Mode.SELECT_TARGET:
 		return []
 	var kind := String(pending.get("kind", ""))
+	var src_idx := int(pending.get("source", current))
 	if kind == PENDING_EXILE_TARGET:
-		var src := int(pending.get("source", current))
 		var res: Array[int] = []
 		for i in players.size():
-			if i != src and not players[i].dead:
+			if i != src_idx and not players[i].dead:
 				res.append(i)
 		return res
 	if kind == PENDING_MUTUAL:
@@ -1009,10 +1104,14 @@ func target_candidates_now() -> Array[int]:
 			if i != src2 and not players[i].dead and players[i].status_layer("pale") > 0:
 				res2.append(i)
 		return res2
-	return _target_candidates(String(pending.get("target_type", "none")), String(pending.get("card_id", "")))
+	return _target_candidates_for(src_idx, String(pending.get("target_type", "none")), String(pending.get("card_id", "")))
 
 # 目标候选（规则：「濒死」角色不能再成为伤害/效果目标，治疗与食物除外）
 func _target_candidates(target_type: String, card_id: String) -> Array[int]:
+	# 兼容旧签名：默认以当前行动玩家为行动来源
+	return _target_candidates_for(current, target_type, card_id)
+
+func _target_candidates_for(source_idx: int, target_type: String, card_id: String) -> Array[int]:
 	var result: Array[int] = []
 	for i in players.size():
 		var p := players[i]
@@ -1022,12 +1121,13 @@ func _target_candidates(target_type: String, card_id: String) -> Array[int]:
 					continue
 				result.append(i)
 			"single_enemy":
-				if p.dead or p.dying or i == current:
+				# 单体目标：任一其他存活玩家（口径 2.5-7：描述未写「敌人」即含队友）
+				if p.dead or p.dying or i == source_idx:
 					continue
 				result.append(i)
 			"self_or_dying":
 				# 食物牌：自己；或任意「濒死」角色（视为其使用，规则 3.3）
-				if i == current and not p.dead and not p.dying:
+				if i == source_idx and not p.dead and not p.dying:
 					result.append(i)
 				elif p.dying and not p.dead:
 					result.append(i)
@@ -1036,16 +1136,16 @@ func _target_candidates(target_type: String, card_id: String) -> Array[int]:
 				if not p.dead:
 					result.append(i)
 			"all_enemies":
-				# 所有敌方玩家（不含自己）
-				if not p.dead and i != current:
+				# 所有敌方玩家：非同队且不含自己
+				if not p.dead and i != source_idx and not is_same_team(source_idx, i):
 					result.append(i)
 			"all_allies":
-				# 所有友方玩家（当前仅含自己，预留组队扩展）
-				if not p.dead and i == current:
+				# 所有友方玩家：同队含自己（1v1 与 1v1v1 下等价于仅自己）
+				if not p.dead and (i == source_idx or is_same_team(source_idx, i)):
 					result.append(i)
 			"all_others":
-				# 除了自己之外的所有存活玩家
-				if not p.dead and i != current:
+				# 除了自己之外的所有存活玩家（含队友）
+				if not p.dead and i != source_idx:
 					result.append(i)
 	return result
 
@@ -1429,6 +1529,9 @@ func _finalize_dying(idx: int) -> void:
 	_check_deaths()
 	if mode == Mode.GAME_OVER:
 		return
+	# 濒死者就是当前行动玩家时，其回合必须就地结束（自伤/状态致死）
+	if _end_turn_if_current_dead():
+		return
 	if damage_return_to == "judge":
 		_after_judge()
 	else:
@@ -1789,13 +1892,16 @@ func _target_type_name(t: String) -> String:
 
 # ---------------- 陷阱系统（规则 3.3） ----------------
 
-# 行为事件钩子：对手布置的陷阱在满足条件时触发
+# 行为事件钩子：敌对玩家布置的陷阱在满足条件时触发（队友陷阱不触发，口径 2.5-2）
 func _emit_behavior(event: String, actor_idx: int, ctx: Dictionary) -> void:
 	for i in players.size():
 		if i == actor_idx:
 			continue
 		var p := players[i]
 		if p.dead:
+			continue
+		# 2v2 中队友的陷阱不会因本方行为触发
+		if is_same_team(i, actor_idx):
 			continue
 		var triggered: Array[String] = []
 		for tid in p.traps:
@@ -2490,7 +2596,7 @@ func ui_confirm_event_show() -> void:
 		var tt := String(event.get("target_type", "none"))
 		var t := src
 		if tt == "single_any" or tt == "single_enemy":
-			var candidates := _target_candidates(tt, "")
+			var candidates := _target_candidates_for(src, tt, "")
 			if candidates.is_empty():
 				_log("没有合法目标，事件无效。")
 				return
@@ -2503,7 +2609,7 @@ func ui_confirm_event_show() -> void:
 		return
 	var tt := String(event.get("target_type", "none"))
 	if tt == "single_any" or tt == "single_enemy":
-		var candidates := _target_candidates(tt, "")
+		var candidates := _target_candidates_for(src, tt, "")
 		if candidates.is_empty():
 			_log("没有合法目标，事件无效。")
 			return
@@ -2514,7 +2620,7 @@ func ui_confirm_event_show() -> void:
 	var ctx := {"source_name": String(event.get("name", ""))}
 	if tt in ["all_players", "all_enemies", "all_allies", "all_others"]:
 		# 多目标事件：对全部合法目标依次结算
-		var candidates := _target_candidates(tt, "")
+		var candidates := _target_candidates_for(src, tt, "")
 		if candidates.is_empty():
 			_log("没有合法目标，事件无效。")
 			return
@@ -2542,23 +2648,43 @@ func _discard_one(card_index: int) -> void:
 # ---------------- 濒死、死亡与胜负（规则 5.3 / 6.2） ----------------
 
 func _check_deaths() -> void:
-	# 死亡宣布在 _finalize_dying 完成；此处仅判定胜负（规则 6.2：所有敌人死亡）
-	var alive: Array[int] = []
-	for i in players.size():
-		if not players[i].dead:
-			alive.append(i)
-	if alive.size() == 1:
-		winner = players[alive[0]].name
+	# 死亡宣布在 _finalize_dying 完成；此处按队伍判定胜负（规则 6.2 / 口径 2.2）
+	if mode == Mode.GAME_OVER:
+		return
+	var alive_teams := _alive_teams()
+	winner = ""
+	winner_team_id = ""
+	winner_team_name = ""
+	winner_members.clear()
+	if alive_teams.size() == 1:
+		var tid := String(alive_teams[0])
+		winner_team_id = tid
+		for i in players.size():
+			if not players[i].dead:
+				winner_members.append(players[i].name)
+		if winner_members.size() == 1:
+			winner = winner_members[0]
+		else:
+			winner_team_name = _team_name(tid)
+			winner = winner_team_name
+			_log("游戏结束！%s 获胜（%s）！" % [winner_team_name, "、".join(winner_members)])
+			mode = Mode.GAME_OVER
+			return
 		mode = Mode.GAME_OVER
 		_log("游戏结束！%s 获胜！" % winner)
+	elif alive_teams.is_empty():
+		mode = Mode.GAME_OVER
+		_log("游戏结束！同归于尽。")
 
 # ---------------- UI 辅助 ----------------
 
 func interstitial_text() -> String:
 	var p := players[current]
+	var team := _team_name(p.team_id)
+	var label := p.name if team.is_empty() else "%s（%s）" % [p.name, team]
 	if first_turn:
-		return "游戏开始，%s 先手！\n\n请 %s 开始操作。" % [p.name, p.name]
-	return "回合交接\n\n现在由 %s 操作。" % p.name
+		return "游戏开始，%s 先手！\n\n请 %s 开始操作。" % [label, p.name]
+	return "回合交接\n\n现在由 %s 操作。" % label
 
 # 弃牌堆公开信息：上一回合进入弃牌堆的牌名（规则 6.1）
 func last_turn_discard_names() -> Array[String]:

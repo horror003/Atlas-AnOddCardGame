@@ -23,7 +23,7 @@ class DraggableCard extends Button:
 		if not (bool(card.get("is_defense", false)) or ctype == "trap" or ctype == "equipment"):
 			var ttype := String(card.get("target_type", "none"))
 			if ttype != "none":
-				main_scene._drag_targets = main_scene._drag_target_candidates(ttype)
+				main_scene._drag_targets = main_scene.game._target_candidates_for(main_scene.game.current, ttype, "")
 				main_scene.call_deferred("_refresh")
 		var preview := Label.new()
 		preview.text = String(card.get("name", ""))
@@ -70,7 +70,8 @@ var _drag_targets: Array[int] = []
 
 # ---------------- 布局常量（集中管理，避免散落的魔法数字） ----------------
 const ROOT_MIN_HEIGHT := 760          # 根容器逻辑高度（视口固定 800）
-const PLAYER_PANEL_HEIGHT := 156      # 玩家面板高度
+const PLAYER_PANEL_HEIGHT := 156      # 2/3 人局面板高度
+const PLAYER_PANEL_HEIGHT_COMPACT := 132  # 4 人局（2×2 布局）面板高度
 const MIDDLE_MIN_HEIGHT := 60         # 日志 + 侧栏区域最小高度
 const LOG_MIN_HEIGHT := 110           # 日志框最小高度
 const HAND_SCROLL_HEIGHT := 60        # 手牌滚动区最小高度
@@ -99,6 +100,7 @@ var player_panels: Array[Button] = []
 var player_labels: Array[RichTextLabel] = []
 var player_skill_rows: Array[HBoxContainer] = []
 var player_info_rows: Array[HBoxContainer] = []
+var players_bar: GridContainer
 
 var skill_bar: HBoxContainer
 var end_play_btn: Button
@@ -133,7 +135,7 @@ func _ready() -> void:
 	_build_ui()
 	game = AtlasGame.new()
 	game.message.connect(_on_log)
-	game.start_game()
+	game.start_game(GameSession.board_id)
 	if OS.is_debug_build():
 		dev_menu = DevMenu.new()
 		dev_menu.game = game
@@ -212,50 +214,13 @@ func _build_ui() -> void:
 	menu_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/launcher.tscn"))
 	top.add_child(menu_btn)
 
-	# 双方玩家面板（兼作目标选择按钮，接受手牌拖放）
-	var players_bar := HBoxContainer.new()
-	players_bar.add_theme_constant_override("separation", 10)
+	# 玩家面板（2 人 1×2 / 3 人 1×3 / 4 人 2×2），兼作目标选择按钮与拖放目标
+	players_bar = GridContainer.new()
+	players_bar.add_theme_constant_override("h_separation", 10)
+	players_bar.add_theme_constant_override("v_separation", 6)
 	root.add_child(players_bar)
-	for i in 2:
-		var pb := DropPanel.new()
-		pb.player_index = i
-		pb.main_scene = self
-		pb.custom_minimum_size = Vector2(0, PLAYER_PANEL_HEIGHT)
-		pb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var vbox := VBoxContainer.new()
-		vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
-		vbox.add_theme_constant_override("separation", 1)
-		pb.add_child(vbox)
-		var rl := StatusLabel.new()
-		rl.player_index = i
-		rl.main_scene = self
-		rl.bbcode_enabled = true
-		rl.scroll_active = false
-		# fit_content=true：按文本内容自动计算高度，不撑满面板也不被压扁
-		rl.fit_content = true
-		# 需要接收点击才能触发 meta_clicked；拖放由 StatusLabel 自行转发给面板。
-		# 用 PASS 让「非链接区域」的点击继续冒泡到玩家面板，避免状态文字右侧空白吞掉选目标点击。
-		rl.mouse_filter = Control.MOUSE_FILTER_PASS
-		rl.meta_underlined = false
-		rl.meta_clicked.connect(_on_player_meta)
-		vbox.add_child(rl)
-		# 信息行：属性 + 状态 + 装备（可点击查看描述）
-		var info_row := HBoxContainer.new()
-		info_row.add_theme_constant_override("separation", 2)
-		info_row.alignment = BoxContainer.ALIGNMENT_CENTER
-		vbox.add_child(info_row)
-		# 技能行（可点击查看描述）
-		var skill_row := HBoxContainer.new()
-		skill_row.add_theme_constant_override("separation", 2)
-		skill_row.alignment = BoxContainer.ALIGNMENT_CENTER
-		vbox.add_child(skill_row)
-		var idx := i
-		pb.pressed.connect(func(): _on_panel(idx))
-		players_bar.add_child(pb)
-		player_panels.append(pb)
-		player_labels.append(rl)
-		player_skill_rows.append(skill_row)
-		player_info_rows.append(info_row)
+	# 先建 2 个占位面板；_refresh 会按实际板子人数重建
+	_rebuild_player_panels(2)
 
 	# 中部：日志 + 侧栏信息
 	var middle := HBoxContainer.new()
@@ -292,6 +257,8 @@ func _build_ui() -> void:
 	side_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	middle.add_child(side_scroll)
 	var side_panel := PanelContainer.new()
+	# 横向填满滚动容器，否则右侧会留出一条背景空档
+	side_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	side_scroll.add_child(side_panel)
 	var side := VBoxContainer.new()
 	side.add_theme_constant_override("separation", 8)
@@ -302,19 +269,20 @@ func _build_ui() -> void:
 	phase_side_label = Label.new()
 	phase_side_label.add_theme_color_override("font_color", UITheme.ACCENT)
 	side.add_child(phase_side_label)
-	discard_info_label = Label.new()
-	discard_info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	discard_info_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
-	side.add_child(discard_info_label)
-	side.add_child(HSeparator.new())
-	# 提示区：金色描边的提示框
 	var prompt_panel := PanelContainer.new()
 	var prompt_sb := UITheme.flat(Color(0.16, 0.13, 0.07), UITheme.ACCENT.darkened(0.35), 6, 1)
 	prompt_panel.add_theme_stylebox_override("panel", prompt_sb)
+	# 提示框紧跟在阶段行之后：4 人局侧栏高度紧张时，先保证操作提示完整可见
 	side.add_child(prompt_panel)
 	prompt_label = Label.new()
 	prompt_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	prompt_panel.add_child(prompt_label)
+	# 上一回合弃牌信息放在最下方，内容超长时可由侧栏独立滚动查看
+	side.add_child(HSeparator.new())
+	discard_info_label = Label.new()
+	discard_info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	discard_info_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	side.add_child(discard_info_label)
 
 	# 预备区（规则 3.4：对手可见全部内容）——标题与按钮合并一行，节省纵向空间
 	var reserve_row := HBoxContainer.new()
@@ -503,16 +471,78 @@ func _fit_char_pick() -> void:
 
 # ---------------- 状态刷新 ----------------
 
+func _rebuild_player_panels(count: int) -> void:
+	## 按人数重建玩家面板：2 人 1×2、3 人 1×3、4 人 2×2
+	for c in players_bar.get_children():
+		players_bar.remove_child(c)
+		c.queue_free()
+	player_panels.clear()
+	player_labels.clear()
+	player_skill_rows.clear()
+	player_info_rows.clear()
+	players_bar.columns = 2 if count <= 2 or count == 4 else 3
+	var panel_h := PLAYER_PANEL_HEIGHT_COMPACT if count >= 4 else PLAYER_PANEL_HEIGHT
+	for i in count:
+		var pb := DropPanel.new()
+		pb.player_index = i
+		pb.main_scene = self
+		pb.custom_minimum_size = Vector2(0, panel_h)
+		pb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var vbox := VBoxContainer.new()
+		vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+		vbox.add_theme_constant_override("separation", 1)
+		pb.add_child(vbox)
+		var rl := StatusLabel.new()
+		rl.player_index = i
+		rl.main_scene = self
+		rl.bbcode_enabled = true
+		rl.scroll_active = false
+		# fit_content=true：按文本内容自动计算高度，不撑满面板也不被压扁
+		rl.fit_content = true
+		# 需要接收点击才能触发 meta_clicked；拖放由 StatusLabel 自行转发给面板。
+		# 用 PASS 让「非链接区域」的点击继续冒泡到玩家面板，避免状态文字右侧空白吞掉选目标点击。
+		rl.mouse_filter = Control.MOUSE_FILTER_PASS
+		rl.meta_underlined = false
+		rl.meta_clicked.connect(_on_player_meta)
+		vbox.add_child(rl)
+		# 信息行：属性 + 装备（可点击查看描述）
+		var info_row := HBoxContainer.new()
+		info_row.add_theme_constant_override("separation", 2)
+		info_row.alignment = BoxContainer.ALIGNMENT_CENTER
+		vbox.add_child(info_row)
+		# 技能行（可点击查看描述）
+		var skill_row := HBoxContainer.new()
+		skill_row.add_theme_constant_override("separation", 2)
+		skill_row.alignment = BoxContainer.ALIGNMENT_CENTER
+		vbox.add_child(skill_row)
+		var idx := i
+		pb.pressed.connect(func(): _on_panel(idx))
+		players_bar.add_child(pb)
+		player_panels.append(pb)
+		player_labels.append(rl)
+		player_skill_rows.append(skill_row)
+		player_info_rows.append(info_row)
+
 func _refresh() -> void:
 	var g := game
 	# 选人阶段
 	char_pick_layer.visible = (g.mode == AtlasGame.Mode.SELECT_CHAR)
 	if char_pick_layer.visible:
 		_rebuild_char_pick()
+	# 面板数量跟随实际人数；选人前按板子人数预建
+	var want := g.players.size()
+	if want == 0:
+		want = g.board_player_count()
+	if players_bar.get_child_count() != want:
+		_rebuild_player_panels(want)
 	if g.players.is_empty():
 		return
 	var cur := g.players[g.current]
-	turn_label.text = "当前回合：%s" % cur.name
+	var cur_team := g._team_name(cur.team_id) if g.board_player_count() > 2 else ""
+	if cur_team.is_empty():
+		turn_label.text = "当前回合：%s" % cur.name
+	else:
+		turn_label.text = "当前回合：%s（%s）" % [cur.name, cur_team]
 	info_label.text = "抽牌堆：%d\n弃牌堆：%d\n事件堆：%d" % [g.draw_pile.size(), g.discard_pile.size(), g.event_deck.size()]
 	phase_side_label.text = "阶段：%s" % AtlasGame.PHASE_NAMES[g.phase]
 	# 信息公开：上一回合进入弃牌堆的牌（规则 6.1）
@@ -525,7 +555,12 @@ func _refresh() -> void:
 	# 玩家面板：生命/状态/预备区/陷阱（规则 3.4 / 6.1）
 	for i in g.players.size():
 		var p := g.players[i]
-		var bb := "[center][b][font_size=18]%s[/font_size][/b][/center]\n" % p.name
+		var name_line := p.name
+		if g.board_player_count() > 2:
+			var tname := g._team_name(p.team_id)
+			if not tname.is_empty():
+				name_line = "%s　[lb]%s[rb]" % [p.name, tname]
+		var bb := "[center][b][font_size=18]%s[/font_size][/b][/center]\n" % name_line
 		bb += "[center][color=lightgray]生命 %d / %d　手牌 %d[/color][/center]\n" % [p.hp, p.max_hp, p.hand.size()]
 		var st_parts: Array[String] = []
 		for s in p.status_ids():
@@ -818,7 +853,20 @@ func _refresh() -> void:
 		event_show_label.text = "%s\n\n%s" % [String(event.get("name", "")), String(event.get("description", ""))]
 	game_over_layer.visible = (g.mode == AtlasGame.Mode.GAME_OVER)
 	if game_over_layer.visible:
-		game_over_label.text = "%s 获胜！" % g.winner
+		var team_name := g.winner_team_name
+		# 只有「队伍数少于人数」的板子才算组队局；混战局不显示队伍名
+		var board_teams: Array = g.board.get("teams", [])
+		var is_team_board := board_teams.size() < g.board_player_count()
+		# 组队局仅剩一名存活者时引擎不写队伍名，这里按存活者的队伍补齐
+		if team_name.is_empty() and is_team_board:
+			for p in g.players:
+				if not p.dead:
+					team_name = g._team_name(p.team_id)
+					break
+		if not team_name.is_empty() and is_team_board:
+			game_over_label.text = "%s 获胜！\n%s" % [team_name, "、".join(g.winner_members)]
+		else:
+			game_over_label.text = "%s 获胜！" % g.winner
 
 # 选人界面（规则 4.1-1）
 func _rebuild_char_pick() -> void:
@@ -826,12 +874,20 @@ func _rebuild_char_pick() -> void:
 		c.visible = false
 		c.queue_free()
 	var g := game
+	var picked := g.picked_char_ids.size()
+	var total := g.board_player_count()
 	var title := Label.new()
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 22)
 	title.add_theme_color_override("font_color", UITheme.ACCENT)
-	title.text = "请 玩家%d 选择角色" % (g.picked_char_ids.size() + 1)
+	title.text = "请第 %d 位选择角色（已选 %d / %d）" % [picked + 1, picked, total]
 	char_pick_box.add_child(title)
+	var hint := Label.new()
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.add_theme_font_size_override("font_size", 13)
+	hint.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	hint.text = "选人结束后随机分配座位与先手"
+	char_pick_box.add_child(hint)
 	for c in g.db.characters:
 		var cid := String(c.get("id", ""))
 		var b := Button.new()
@@ -1217,7 +1273,7 @@ func _can_drop_on_player(p_idx: int, data: Variant) -> bool:
 	if bool(card.get("is_defense", false)) or ctype == "trap" or ctype == "equipment":
 		return false
 	var ttype := String(card.get("target_type", "none"))
-	return _drag_target_candidates(ttype).has(p_idx)
+	return game._target_candidates_for(game.current, ttype, "").has(p_idx)
 
 func _drop_on_player(p_idx: int, data: Variant) -> void:
 	_dragging_card_index = -1
@@ -1255,24 +1311,3 @@ func _drop_on_log(data: Variant) -> void:
 		else:
 			game.ui_cancel_target()
 	_refresh()
-
-# 与 game.gd 的 _target_candidates 同规则：「濒死」角色不能成为伤害/效果目标，食物除外
-func _drag_target_candidates(target_type: String) -> Array[int]:
-	var result: Array[int] = []
-	for i in game.players.size():
-		var p := game.players[i]
-		match target_type:
-			"single_any":
-				if p.dead or p.dying:
-					continue
-				result.append(i)
-			"single_enemy":
-				if p.dead or p.dying or i == game.current:
-					continue
-				result.append(i)
-			"self_or_dying":
-				if i == game.current and not p.dead and not p.dying:
-					result.append(i)
-				elif p.dying and not p.dead:
-					result.append(i)
-	return result

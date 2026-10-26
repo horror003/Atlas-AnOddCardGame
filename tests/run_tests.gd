@@ -9,6 +9,7 @@ const SUITES := [
 	"res://tests/suite_damage.gd",
 	"res://tests/suite_skills.gd",
 	"res://tests/suite_events.gd",
+	"res://tests/suite_multiplayer.gd",
 ]
 
 var checks := 0

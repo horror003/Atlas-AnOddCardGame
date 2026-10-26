@@ -12,6 +12,7 @@ var factions: Array = []                # 属性派系列表（两套派系，�
 var characters: Array = []              # 角色定义列表（角色池，规则 4.1）
 var statuses: Dictionary = {}           # 状态 id -> 定义
 var combos: Array = []                  # 装备组合定义列表（同时装备指定装备时激活）
+var boards: Array = []                  # 板子定义列表（人数 / 队伍 / 座位映射）
 var deck_composition: Dictionary = {}   # 抽牌堆构成：卡牌 id -> 数量
 var event_deck_list: Array[String] = [] # 特殊事件牌堆构成
 
@@ -50,6 +51,10 @@ func _init() -> void:
 	if combos_raw != null:
 		for e in combos_raw.get("combos", []):
 			combos.append(e)
+	var boards_raw = _load_json("res://data/boards.json")
+	if boards_raw != null:
+		for e in boards_raw.get("boards", []):
+			boards.append(e)
 	_validate()
 
 func _load_json(path: String) -> Variant:
@@ -103,6 +108,39 @@ func _validate() -> void:
 	_check_refs("属性", attributes.values(), issues, seen)
 	_check_refs("状态", statuses.values(), issues, seen)
 	_check_refs("装备组合", combos, issues, seen)
+	# 板子：座位必须恰好覆盖 0..player_count-1，队伍 id 唯一
+	var board_ids_seen: Dictionary = {}
+	for b in boards:
+		var bid := String(b.get("id", "?"))
+		if board_ids_seen.has(bid):
+			issues.append("板子 id 重复：%s" % bid)
+		board_ids_seen[bid] = true
+		var pc := int(b.get("player_count", 0))
+		if pc < 2:
+			issues.append("板子 %s 的 player_count 必须 >= 2（当前 %d）" % [bid, pc])
+		var team_ids_seen: Dictionary = {}
+		var seat_seen: Dictionary = {}
+		var seat_total := 0
+		for t in b.get("teams", []):
+			var tid := String(t.get("id", ""))
+			if tid.is_empty():
+				issues.append("板子 %s 存在空的队伍 id" % bid)
+			elif team_ids_seen.has(tid):
+				issues.append("板子 %s 的队伍 id 重复：%s" % [bid, tid])
+			team_ids_seen[tid] = true
+			var seats: Array = t.get("seats", [])
+			if seats.is_empty():
+				issues.append("板子 %s 的队伍 %s 没有任何座位" % [bid, tid])
+			for s in seats:
+				var si := int(s)
+				seat_total += 1
+				if si < 0 or si >= pc:
+					issues.append("板子 %s 的座位 %d 越界（player_count=%d）" % [bid, si, pc])
+				elif seat_seen.has(si):
+					issues.append("板子 %s 的座位 %d 被多个队伍占用" % [bid, si])
+				seat_seen[si] = true
+		if seat_total != pc or seat_seen.size() != pc:
+			issues.append("板子 %s 的座位未完整覆盖 0..%d" % [bid, pc - 1])
 	if issues.is_empty():
 		return
 	for msg in issues:
@@ -184,3 +222,27 @@ func get_character(id: String) -> Dictionary:
 			var cfg: Dictionary = c
 			return cfg.duplicate(true)
 	return {}
+
+func get_board(id: String) -> Dictionary:
+	for b in boards:
+		if String(b.get("id", "")) == id:
+			var cfg: Dictionary = b
+			return cfg.duplicate(true)
+	return {}
+
+func default_board() -> Dictionary:
+	## 缺省板子：优先 default=true，否则取第一个；均无则返回空字典
+	for b in boards:
+		if bool(b.get("default", false)):
+			var cfg: Dictionary = b
+			return cfg.duplicate(true)
+	if boards.is_empty():
+		return {}
+	var first: Dictionary = boards[0]
+	return first.duplicate(true)
+
+func board_ids() -> Array[String]:
+	var out: Array[String] = []
+	for b in boards:
+		out.append(String(b.get("id", "")))
+	return out

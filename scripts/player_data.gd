@@ -6,6 +6,8 @@ extends RefCounted
 
 var name: String = ""
 var char_id: String = ""               # 所选角色 id
+var team_id: String = ""               # 所属队伍 id（由板子配置决定）
+var seat_index: int = 0                # 座位序号（等于 players 数组下标，一局内固定）
 var attribute_ids: Array[String] = []  # 属性 id 列表（两派系各 1 个）
 var max_hp: int = 20
 var hp: int = 20
