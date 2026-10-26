@@ -16,6 +16,20 @@ const TEXT_DIM := Color(0.60, 0.63, 0.68)
 const DANGER := Color(0.88, 0.34, 0.32)
 const OK := Color(0.42, 0.85, 0.50)
 
+# ---------------- 移动端适配 ----------------
+
+## 是否移动端（触屏设备）。ATLAS_MOBILE 环境变量用于在桌面模拟移动端布局调试。
+static func is_mobile() -> bool:
+	return OS.get_name() == "Android" or OS.get_name() == "iOS" or OS.has_environment("ATLAS_MOBILE")
+
+## 触屏点击目标放大系数：可点元素短边 ≥ 44dp ≈ 56+ 逻辑像素
+static func touch_scale() -> float:
+	return 1.6 if is_mobile() else 1.0
+
+## 移动端字号整体放大一档
+static func fs(base: int) -> int:
+	return base + 3 if is_mobile() else base
+
 # ---------------- 基础构造 ----------------
 
 static func flat(bg: Color, border: Color, radius: int = 8, bw: int = 1) -> StyleBoxFlat:

@@ -50,6 +50,8 @@ func _ready() -> void:
 
 	var editor_btn := _menu_button("数据编辑器", false)
 	editor_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/editor.tscn"))
+	# 数据编辑器是桌面专属，移动端不移植、不显示入口
+	editor_btn.visible = OS.get_name() != "Android" and OS.get_name() != "iOS"
 	box.add_child(editor_btn)
 
 	var quit_btn := _menu_button("退出", false)
@@ -60,10 +62,24 @@ func _menu_button(text: String, primary: bool) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.custom_minimum_size = Vector2(320, 62)
-	b.add_theme_font_size_override("font_size", 20)
+	b.add_theme_font_size_override("font_size", UITheme.fs(20))
 	if primary:
 		UITheme.style_button(b, UITheme.accent_button_styles())
 	return b
+
+func _input(event: InputEvent) -> void:
+	# Esc / 返回键：板子选择弹层打开时仅关闭弹层
+	var key := event as InputEventKey
+	if key != null and key.pressed and not key.echo and key.keycode == KEY_ESCAPE:
+		if _picker != null and _picker.visible:
+			_picker.visible = false
+			get_viewport().set_input_as_handled()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		if _picker != null and _picker.visible:
+			_picker.visible = false
+		# 启动器主界面不拦截返回键，交给系统默认行为（退出应用）
 
 # ---------------- 板子选择（多人对战入口） ----------------
 
