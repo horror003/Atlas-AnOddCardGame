@@ -155,8 +155,8 @@ var reserve_title: Label
 var reserve_box: HBoxContainer
 var player_panels: Array[Button] = []
 var player_labels: Array[RichTextLabel] = []
-var player_skill_rows: Array[HBoxContainer] = []
-var player_info_rows: Array[HBoxContainer] = []
+var player_skill_rows: Array[HFlowContainer] = []
+var player_info_rows: Array[HFlowContainer] = []
 var players_bar: GridContainer
 
 var skill_bar: HBoxContainer
@@ -610,15 +610,17 @@ func _rebuild_player_panels(count: int) -> void:
 		rl.meta_underlined = false
 		rl.meta_clicked.connect(_on_player_meta)
 		vbox.add_child(rl)
-		# 信息行：属性 + 装备（可点击查看描述）
-		var info_row := HBoxContainer.new()
-		info_row.add_theme_constant_override("separation", 2)
-		info_row.alignment = BoxContainer.ALIGNMENT_CENTER
+		# 信息行：属性 + 装备（可点击查看描述）；HFlow 允许换行，chip 多时不横向溢出
+		var info_row := HFlowContainer.new()
+		info_row.add_theme_constant_override("h_separation", 2)
+		info_row.add_theme_constant_override("v_separation", 2)
+		info_row.alignment = FlowContainer.ALIGNMENT_CENTER
 		vbox.add_child(info_row)
-		# 技能行（可点击查看描述）
-		var skill_row := HBoxContainer.new()
-		skill_row.add_theme_constant_override("separation", 2)
-		skill_row.alignment = BoxContainer.ALIGNMENT_CENTER
+		# 技能行（可点击查看描述）；同上允许换行
+		var skill_row := HFlowContainer.new()
+		skill_row.add_theme_constant_override("h_separation", 2)
+		skill_row.add_theme_constant_override("v_separation", 2)
+		skill_row.alignment = FlowContainer.ALIGNMENT_CENTER
 		vbox.add_child(skill_row)
 		var idx := i
 		pb.pressed.connect(func(): _on_panel(idx))
@@ -702,9 +704,9 @@ func _refresh() -> void:
 		player_labels[i].text = bb
 		# 信息行：属性 + 装备（状态已移动到上方状态栏，点击可查阅）
 		# compact 时技能 chips 也并入本行，省掉一整行高度
-		var info_row: HBoxContainer = player_info_rows[i]
-		var skill_row: HBoxContainer = player_skill_rows[i]
-		var chip_row: HBoxContainer = info_row if compact else skill_row
+		var info_row: HFlowContainer = player_info_rows[i]
+		var skill_row: HFlowContainer = player_skill_rows[i]
+		var chip_row: HFlowContainer = info_row if compact else skill_row
 		var chip_size := _mini_btn_size(compact)
 		for c in info_row.get_children():
 			c.queue_free()
@@ -765,6 +767,17 @@ func _refresh() -> void:
 		else:
 			sb = panel_base_sb
 		player_panels[i].add_theme_stylebox_override("normal", sb)
+
+	# 面板高度自适应：状态/装备/技能行增多时内容可能超出固定高度，
+	# Button 不是容器、不会按内容撑开，这里按内容最小高度手动撑开，避免溢出覆盖下方面板
+	for i in player_panels.size():
+		var pb2 := player_panels[i]
+		var vb := pb2.get_child(0) as VBoxContainer
+		if vb == null:
+			continue
+		var target_h := maxf(float(_panel_h(player_panels.size() >= 4)), vb.get_combined_minimum_size().y + 8.0)
+		if absf(pb2.custom_minimum_size.y - target_h) > 1.0:
+			pb2.custom_minimum_size.y = target_h
 
 	# 当前视图玩家（响应窗口时切换为防御方 / 被询问救援的玩家 / 弃牌选择的目标）
 	var view := cur

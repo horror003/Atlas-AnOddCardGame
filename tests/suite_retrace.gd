@@ -5,6 +5,7 @@ extends RefCounted
 func run(t) -> void:
 	_test_pool_filter(t)
 	_test_plunder_card(t)
+	_test_plunder_any_zone(t)
 	_test_ion_prism_flow(t)
 	_test_electro_turn_end(t)
 	_test_electro_damage_reduction(t)
@@ -56,6 +57,31 @@ func _test_plunder_card(t) -> void:
 	t.check(g.players[1].hand.is_empty(), "目标失去该手牌")
 	t.check(g.discard_pile.has("plunder"), "【掠夺】本身进入弃牌堆")
 	t.check_eq(g.mode, AtlasGame.Mode.PLAY, "结算后回到出牌阶段")
+
+func _test_plunder_any_zone(t) -> void:
+	# 【掠夺】扩展：可掠夺手牌/装备/预备/陷阱任意区域，得手后加入来源对应区域
+	var g: AtlasGame = t.make_game(2)
+	var p := g.players[0]
+	p.hand.append("plunder")
+	var tp := g.players[1]
+	tp.equipment.append("eq_sword")
+	tp.reserve.append("defend2")
+	tp.traps.append("trap_ambush")
+	g.ui_play_card(0)
+	t.check_eq(g.mode, AtlasGame.Mode.SELECT_TARGET, "掠夺全区域：进入选目标")
+	g.ui_select_target(1)
+	t.check_eq(g.mode, AtlasGame.Mode.SKILL_PICK, "掠夺全区域：目标无手牌也可掠夺（进入选牌）")
+	var opts: Array = g.pending.get("options", [])
+	t.check(opts.has("equip:0") and opts.has("reserve:0") and opts.has("trap:0"), "掠夺全区域：选项覆盖装备/预备/陷阱")
+	g.ui_skill_pick("reserve:0")
+	t.check(p.reserve.has("defend2"), "掠夺全区域：预备区牌加入自己预备区")
+	t.check(tp.reserve.is_empty(), "掠夺全区域：目标失去预备区牌")
+	# 掠夺装备区 → 加入自己装备区
+	p.hand.append("plunder")
+	g.ui_play_card(p.hand.size() - 1)
+	g.ui_select_target(1)
+	g.ui_skill_pick("equip:0")
+	t.check(p.equipment.has("eq_sword"), "掠夺全区域：装备牌加入自己装备区")
 
 # ---------------- 元明：电离棱体 / 电棱 / 聚合 ----------------
 

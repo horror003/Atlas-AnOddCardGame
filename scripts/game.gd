@@ -1044,14 +1044,15 @@ func _resolve_played_card(p: PlayerData, card_index: int, card_id: String, card:
 		_resolve_skip(p, target_idx)
 		_ensure_dying_window()  # 「恶化1」等自伤致死时优先开救援窗口
 		return
-	# 【掠夺】特殊结算：不触发响应/防御窗口，直接盲选目标一张手牌
+	# 【掠夺】特殊结算：不触发响应/防御窗口，直接夺取目标区域内的一张牌（手牌盲选，其余区域明牌）
 	if card_id == "plunder":
 		_emit_behavior("play_card", current, {"card_id": card_id})
-		if players[target_idx].hand.is_empty():
-			_log("%s 没有手牌，掠夺落空。" % players[target_idx].name)
+		var tp0 := players[target_idx]
+		if tp0.hand.is_empty() and tp0.equipment.is_empty() and tp0.reserve.is_empty() and tp0.traps.is_empty():
+			_log("%s 区域内没有牌，掠夺落空。" % tp0.name)
 			_ensure_dying_window()
 			return
-		_start_plunder(current, target_idx, "card")
+		_start_plunder(current, target_idx, "card", false)
 		return
 	if card_id == "basic_attack":
 		_resolve_basic_attack(p, target_idx)

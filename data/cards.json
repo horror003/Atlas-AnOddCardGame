@@ -605,7 +605,7 @@
 	},
 	{
 	  "defense_value": 0,
-	  "description": "掠夺目标一张手牌，\n加入自己的手牌中。",
+	  "description": "掠夺目标区域内的一张牌（手牌盲选，\n装备/预备/陷阱区明牌），\n加入自己的对应区域中。",
 	  "effects": [],
 	  "id": "plunder",
 	  "is_defense": false,
