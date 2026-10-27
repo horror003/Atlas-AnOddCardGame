@@ -670,8 +670,8 @@ func _enter_play_phase(p: PlayerData) -> void:
 		_set_pending(PENDING_MERCY, {"options": ["lose_hp", "add_stop_sword"]})
 		mode = Mode.SKILL_PICK
 		return
-	# 溯〖食痂〗（需觉醒）：出牌阶段开始时可清空所有「痂」回复等量生命
-	if _has_skill(p, "skill_scab_eat") and p.scab > 0:
+	# 溯〖食痂〗（需觉醒〖蚀痕〗后解锁）：出牌阶段开始时可清空所有「痂」回复等量生命
+	if p.scab_evolved and _has_skill(p, "skill_scab_eat") and p.scab > 0:
 		_set_pending(PENDING_SCAB_EAT, {"options": ["yes", "no"]})
 		mode = Mode.SKILL_PICK
 		_log("〖食痂〗：是否清空所有「痂」（%d 层）并回复等量生命？" % p.scab)

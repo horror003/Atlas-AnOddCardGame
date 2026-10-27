@@ -212,6 +212,13 @@ func _test_eclipse_awaken_and_eat(t) -> void:
 	var p := g.players[0]
 	p.skill_ids.append("skill_scab_retrace")
 	p.skill_ids.append("skill_eclipse")
+	# 未觉醒时食痂不可用：即使技能在列表中且有「痂」也不应询问
+	p.skill_ids.append("skill_scab_eat")
+	p.scab = 10
+	g._enter_play_phase(p)
+	t.check(not p.scab_evolved, "食痂门控铺垫：未觉醒")
+	t.check_eq(g.mode, AtlasGame.Mode.PLAY, "食痂：未觉醒不弹询问")
+	t.check_eq(p.scab, 10, "食痂：未觉醒不清痂")
 	p.scab = 21
 	p.hp = 2
 	g._enter_play_phase(p)
