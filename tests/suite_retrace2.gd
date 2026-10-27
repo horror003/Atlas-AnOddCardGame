@@ -347,7 +347,7 @@ func _test_remnant_ark_core(t) -> void:
 	t.check_eq(p.hp, 10, "余孽：失去 30 点生命触发濒死，方舟遗芯复活 50%（20→10）")
 	t.check(not p.dying, "余孽：方舟遗芯跳过救援直接复活")
 	t.check(not p.reserve.has("ark_core"), "余孽：方舟遗芯已弃置")
-	t.check(g.discard_pile.has("ark_core"), "余孽：方舟遗芯进入弃牌堆")
+	t.check(not g.discard_pile.has("ark_core"), "余孽：方舟遗芯为 token 牌，弃置后移出游戏而非进入弃牌堆")
 	t.check(bool(p.limited_used.get("skill_remnant", false)), "余孽：限定技已标记")
 	# 免疫验证：伤害无效
 	g._deal_damage(1, 0, 5, "physical", "测试", "")

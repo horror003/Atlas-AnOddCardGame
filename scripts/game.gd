@@ -147,6 +147,10 @@ func _pending_kind() -> String:
 	return String(pending.get("kind", ""))
 
 func _to_discard(card_id: String) -> void:
+	# 衍生物 token 牌（【方舟遗芯】【陪葬品】等）不进入弃牌堆：弃置后直接移出游戏，
+	# 避免后续随弃牌堆洗入摸牌堆
+	if db.get_card(card_id).get("tags", []).has("token"):
+		return
 	# 进入弃牌堆，并记录本回合弃牌（信息公开，规则 6.1）
 	discard_pile.append(card_id)
 	turn_discards.append(card_id)
