@@ -1,5 +1,10 @@
-## How to deploy to the local environment 如何部署到本地
+# How to deploy to the local environment 如何部署到本地
 
+### 打包下载此项目，导入Godot4.7.2（或者更新的版本）即可
+
+然后可通过*项目-导出*来导出为exe或apk等
+
+## 更简单的方法，但可能并非最新版本：
 ### Windows Desktop Windows桌面端
 下载.version文件夹里的exe文件（测试版后缀一般为alpha），双击启动即可
 
