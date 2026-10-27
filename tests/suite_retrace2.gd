@@ -346,6 +346,9 @@ func _test_remnant_ark_core(t) -> void:
 	g._deal_damage(1, 0, 5, "physical", "测试", "")
 	t.check(g.damage_queue.is_empty(), "余孽：免疫期间伤害不入队")
 	t.check_eq(p.hp, 10, "余孽：免疫期间生命不变")
+	# 免疫验证：生命流失同样无效
+	g._lose_hp_direct(p, 5, "测试生命流失")
+	t.check_eq(p.hp, 10, "余孽：免疫期间生命流失无效")
 
 # ---------------- 溯奥比亚：全视之眼 ----------------
 

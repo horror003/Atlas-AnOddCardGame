@@ -20,6 +20,7 @@ func run(t) -> void:
 	_test_prayer_other(t)
 	_test_guardian_way(t)
 	_test_ripper_attack_and_plunder(t)
+	_test_ripper_plunder_reserve(t)
 	_test_ripper_turn_cap(t)
 	_test_millennium_and_coffin(t)
 	_test_millennium_two_marks(t)
@@ -260,6 +261,23 @@ func _test_ripper_attack_and_plunder(t) -> void:
 	t.check(g.players[1].hand.is_empty(), "目标手牌被掠夺")
 	t.check_eq(p.hand.size(), 0, "原牌未进入手牌（入弃牌堆）")
 	t.check_eq(p.funerary_this_turn, 1, "本回合掠夺计数 +1")
+
+func _test_ripper_plunder_reserve(t) -> void:
+	var g: AtlasGame = t.make_game(2)
+	var p := g.players[0]
+	p.skill_ids.append("skill_ripper")
+	p.hand.append("basic_attack")
+	g.players[1].reserve.append("defend1")  # 目标手牌为空，仅预备区有牌
+	g.ui_play_card(0)
+	g.ui_select_target(1)
+	t.check_eq(String(g.pending.get("kind", "")), AtlasGame.PENDING_RIPPER_ASK, "开膛手：目标仅预备区有牌也弹出询问")
+	g.ui_skill_pick("yes")
+	t.check_eq(g.mode, AtlasGame.Mode.SKILL_PICK, "开膛手：进入掠夺选牌")
+	t.check(g.pending.get("options", []).has("reserve:0"), "开膛手：选项含预备区牌")
+	g.ui_skill_pick("reserve:0")
+	t.check_eq(g._funerary_count(p), 1, "开膛手：掠夺预备区牌扣置【陪葬品】")
+	t.check(g.players[1].reserve.is_empty(), "开膛手：目标预备区牌被掠夺")
+	t.check(g.discard_pile.has("defend1"), "开膛手：原牌视作丢弃")
 
 func _test_ripper_turn_cap(t) -> void:
 	var g: AtlasGame = t.make_game(2)

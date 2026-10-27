@@ -465,6 +465,10 @@ func _lose_hp_direct(p: PlayerData, val: int, reason: String) -> void:
 	## 救援窗口统一由 _ensure_dying_window() 在流程收尾处开启，避免中途打断结算
 	if val <= 0:
 		return
+	# 溯〖余孽〗：免疫期间也免疫生命流失
+	if p.damage_immune:
+		_log("%s 处于〖余孽〗免疫中，%d 点生命流失（%s）无效。" % [p.name, val, reason])
+		return
 	p.hp -= val
 	_log("%s 失去 %d 点生命（%s），剩余生命 %d。" % [p.name, val, reason, maxi(0, p.hp)])
 	if p.hp <= 0 and not p.dying and not p.dead:
@@ -2729,7 +2733,7 @@ func _skill_sand_burial(p: PlayerData, _skill: Dictionary, skill_id: String) -> 
 
 # 掠夺入口：从目标区域拿一张牌入来源对应区域。
 # 手牌=盲选（UI 只显示数量与背面）；装备/预备/陷阱=明牌自选。目标全空→落空记日志。
-func _start_plunder(src_idx: int, target_idx: int, purpose: String, hand_only: bool = true) -> bool:
+func _start_plunder(src_idx: int, target_idx: int, purpose: String, hand_only: bool = true, include_reserve: bool = false) -> bool:
 	var sp := players[src_idx]
 	var tp := players[target_idx]
 	var opts: Array[String] = []
@@ -2742,6 +2746,10 @@ func _start_plunder(src_idx: int, target_idx: int, purpose: String, hand_only: b
 			opts.append("reserve:%d" % i)
 		for i in tp.traps.size():
 			opts.append("trap:%d" % i)
+	elif include_reserve:
+		# 〖开膛手〗：手牌之外还可掠夺预备区中的牌
+		for i in tp.reserve.size():
+			opts.append("reserve:%d" % i)
 	if opts.is_empty():
 		_log("%s 尝试掠夺 %s，但其区域内没有可掠夺的牌，掠夺落空。" % [sp.name, tp.name])
 		return false
@@ -2778,7 +2786,7 @@ func _pick_plunder(_p: PlayerData, _skill_id: String, token: String) -> void:
 		_to_discard(cid)
 		sp.reserve.append("token_funerary")
 		sp.funerary_this_turn += 1
-		_log("%s 掠夺了 %s 的一张手牌（%s 入弃牌堆），扣置一张【陪葬品】于预备区（本回合 %d/2，储存 %d/6）。" % [sp.name, tp.name, cname, sp.funerary_this_turn, _funerary_count(sp)])
+		_log("%s 掠夺了 %s 的%s（%s 入弃牌堆），扣置一张【陪葬品】于预备区（本回合 %d/2，储存 %d/6）。" % [sp.name, tp.name, "一张预备区牌" if zone == "reserve" else "一张手牌", cname, sp.funerary_this_turn, _funerary_count(sp)])
 	else:
 		# 加入来源对应区域（当前用途均为手牌 → 手牌）
 		match zone:
@@ -2859,8 +2867,8 @@ func _run_deferred_prompts() -> void:
 			continue
 		var sp := players[src]
 		var tp := players[tgt]
-		# 弹出时校验：双方存活、目标有手牌、本回合掠夺 <2 张、储存 <6 张
-		if sp.dead or tp.dead or tp.hand.is_empty():
+		# 弹出时校验：双方存活、目标有手牌或预备区牌、本回合掠夺 <2 张、储存 <6 张
+		if sp.dead or tp.dead or (tp.hand.is_empty() and tp.reserve.is_empty()):
 			continue
 		if sp.funerary_this_turn >= 2 or _funerary_count(sp) >= 6:
 			continue
@@ -2916,7 +2924,7 @@ func _pick_ripper_ask(_p: PlayerData, _skill_id: String, token: String) -> void:
 		_log("%s 放弃〖开膛手〗的掠夺。" % players[src].name)
 		_run_deferred_prompts()
 		return
-	_start_plunder(src, tgt, "ripper")
+	_start_plunder(src, tgt, "ripper", true, true)
 
 # 〖演算机器〗二选一：①摸一张牌；②回复 2 点生命；skip 放弃
 func _pick_machine(_p: PlayerData, _skill_id: String, token: String) -> void:
@@ -3126,13 +3134,14 @@ func _pick_frolic_card(p: PlayerData, skill_id: String, token: String) -> void:
 	mode = Mode.SELECT_TARGET
 	_log("〖嬉闹〗：已选 %s → 请选择要加入手牌的玩家（可含自己）。" % String(db.get_card(cid).get("name", cid)))
 
-# 溯阿瑞亚〖余孽〗（限定技）：【方舟遗芯】加入预备区，失去 30 点生命，下个出牌阶段前免疫任何伤害
+# 溯阿瑞亚〖余孽〗（限定技）：【方舟遗芯】加入预备区，失去 30 点生命，下个出牌阶段前免疫任何伤害与生命流失
 func _skill_remnant(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
 	p.limited_used[skill_id] = true
 	p.reserve.append("ark_core")
-	p.damage_immune = true
-	_log("%s 发动〖余孽〗：一张【方舟遗芯】加入预备区；在其下个出牌阶段前，免疫任何伤害。" % p.name)
+	# 先支付 30 点生命代价（免疫在代价之后生效，否则代价会被免疫吞掉）
 	_lose_hp_direct(p, 30, "〖余孽〗")
+	p.damage_immune = true
+	_log("%s 发动〖余孽〗：一张【方舟遗芯】加入预备区；在其下个出牌阶段前，免疫任何伤害与生命流失。" % p.name)
 	_ensure_dying_window()
 	return true
 

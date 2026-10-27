@@ -1115,7 +1115,7 @@ func _rebuild_skill_pick() -> void:
 		var purpose := String(game.pending.get("purpose", ""))
 		var tgt_idx := int(game.pending.get("target", game.current))
 		if purpose == "ripper":
-			title.text = "〖开膛手〗：盲选 %s 的一张手牌扣置为【陪葬品】" % game.players[tgt_idx].name
+			title.text = "〖开膛手〗：选择 %s 的一张手牌（盲选）或预备区牌扣置为【陪葬品】" % game.players[tgt_idx].name
 		elif purpose == "converge":
 			title.text = "〖聚合〗：盲选 %s 的一张手牌" % game.players[tgt_idx].name
 		else:
