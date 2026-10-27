@@ -468,8 +468,7 @@
 	  "name": "【刻耳柏洛斯的怨恨】",
 	  "passive": {
 		"conditions": {
-		  "card_id": "basic_attack",
-		  "damage_type": "physical"
+		  "card_id": "basic_attack"
 		},
 		"effect": {
 		  "max": 3,

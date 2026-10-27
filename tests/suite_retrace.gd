@@ -21,6 +21,7 @@ func run(t) -> void:
 	_test_prayer_other(t)
 	_test_guardian_way(t)
 	_test_ripper_attack_and_plunder(t)
+	_test_ripper_kerberos(t)
 	_test_ripper_plunder_reserve(t)
 	_test_ripper_turn_cap(t)
 	_test_millennium_and_coffin(t)
@@ -287,6 +288,23 @@ func _test_ripper_attack_and_plunder(t) -> void:
 	t.check(g.players[1].hand.is_empty(), "目标手牌被掠夺")
 	t.check_eq(p.hand.size(), 0, "原牌未进入手牌（入弃牌堆）")
 	t.check_eq(p.funerary_this_turn, 1, "本回合掠夺计数 +1")
+
+func _test_ripper_kerberos(t) -> void:
+	# 瑞普装备【刻耳柏洛斯的怨恨】：灵魂伤害的普攻同样享受「每打出一张普攻+1」增伤
+	var g: AtlasGame = t.make_game(2)
+	var p := g.players[0]
+	p.skill_ids.append("skill_ripper")
+	p.equipment.append("eq_kerberos")
+	p.hand.append("basic_attack")
+	p.hand.append("basic_attack")
+	g.ui_play_card(0)
+	g.ui_select_target(1)
+	t.check_eq(g.players[1].hp, 18, "刻耳柏洛斯：第一张普攻 2 灵魂（无层数）")
+	g.ui_skill_pick("no")  # 放弃掠夺
+	g.ui_play_card(0)
+	g.ui_select_target(1)
+	t.check_eq(g.players[1].hp, 15, "刻耳柏洛斯：第二张普攻 2+1=3 灵魂")
+	g.ui_skill_pick("no")
 
 func _test_ripper_plunder_reserve(t) -> void:
 	var g: AtlasGame = t.make_game(2)
