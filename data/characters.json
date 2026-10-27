@@ -1,6 +1,60 @@
 ﻿{
 	"characters":  [
 					   {
+						   "attribute_ids": ["time", "gloom"],
+						   "draw_limit": 5, "hand_limit": 3, "max_hp": 20,
+						   "id": "char_liste_retrace", "name": "溯李斯特", "pool": "retrace",
+						   "skill_ids": ["skill_oscillation", "skill_noise_retrace"]
+					   },
+					   {
+						   "attribute_ids": ["time", "space"],
+						   "draw_limit": 5, "hand_limit": 3, "max_hp": 20,
+						   "id": "char_areia_retrace", "name": "溯阿瑞亚", "pool": "retrace",
+						   "skill_ids": ["skill_deception", "skill_exile_retrace", "skill_remnant"]
+					   },
+					   {
+						   "attribute_ids": ["time", "chaos"],
+						   "draw_limit": 5, "hand_limit": 3, "max_hp": 20,
+						   "id": "char_wuling_retrace", "name": "溯伍灵", "pool": "retrace",
+						   "skill_ids": ["skill_perceive", "skill_frolic"]
+					   },
+					   {
+						   "attribute_ids": ["life", "chaos"],
+						   "draw_limit": 5, "hand_limit": 3, "max_hp": 20,
+						   "id": "char_shijia_retrace", "name": "溯蚀痂", "pool": "retrace",
+						   "skill_ids": ["skill_bloodline", "skill_scab_retrace", "skill_eclipse", "skill_scab_eat"]
+					   },
+					   {
+						   "attribute_ids": ["delusion", "info"],
+						   "draw_limit": 5, "hand_limit": 3, "max_hp": 24,
+						   "id": "char_justin_retrace", "name": "溯贾斯汀", "pool": "retrace",
+						   "skill_ids": ["skill_hope_retrace", "skill_regen_retrace", "skill_false_step_retrace", "skill_dawn", "skill_leap_faith"]
+					   },
+					   {
+						   "attribute_ids": ["delusion", "space"],
+						   "draw_limit": 5, "hand_limit": 3, "max_hp": 20,
+						   "id": "char_igarita_retrace", "name": "溯伊加尔塔", "pool": "retrace",
+						   "skill_ids": ["skill_ark_sword", "skill_guardian_retrace"]
+					   },
+					   {
+						   "attribute_ids": ["particle", "gloom"],
+						   "draw_limit": 5, "hand_limit": 3, "max_hp": 20,
+						   "id": "char_mowang_retrace", "name": "溯“魔王”", "pool": "retrace",
+						   "skill_ids": ["skill_caged_beast_retrace", "skill_restraint", "skill_rhythm_retrace"]
+					   },
+					   {
+						   "attribute_ids": ["particle", "gloom"],
+						   "draw_limit": 5, "hand_limit": 3, "max_hp": 20,
+						   "id": "char_xuwu_retrace", "name": "溯序巫", "pool": "retrace",
+						   "skill_ids": ["skill_plague_doctor", "skill_leap_transition", "skill_reorder"]
+					   },
+					   {
+						   "attribute_ids": ["particle", "chaos"],
+						   "draw_limit": 5, "hand_limit": 3, "max_hp": 20,
+						   "id": "char_aubia_retrace", "name": "溯奥比亚", "pool": "retrace",
+						   "skill_ids": ["skill_light_eye", "skill_all_seeing"]
+					   },
+					   {
 						   "attribute_ids":  [
 												 "time",
                                                  "chaos"
@@ -10,6 +64,7 @@
 						   "id":  "char_wuling",
 						   "max_hp":  20.0,
 						   "name":  "伍灵",
+						   "pool":  "classic",
 						   "skill_ids":  [
                                              "skill_perceive"
 										 ]
@@ -24,6 +79,7 @@
 						   "id":  "char_areia",
 						   "max_hp":  20.0,
 						   "name":  "阿瑞亚",
+						   "pool":  "classic",
 						   "skill_ids":  [
 											 "skill_deception",
                                              "skill_exile"
@@ -68,6 +124,7 @@
 						   "id":  "char_shijia",
 						   "max_hp":  20.0,
 						   "name":  "蚀痂",
+						   "pool":  "classic",
 						   "skill_ids":  [
 											 "skill_bloodline",
                                              "skill_scab"
@@ -83,6 +140,7 @@
 						   "id":  "char_igarita",
 						   "max_hp":  20.0,
 						   "name":  "伊加尔塔",
+						   "pool":  "classic",
 						   "skill_ids":  [
 											 "skill_ark_sword",
                                              "skill_guardian"
@@ -113,6 +171,7 @@
 						   "id":  "char_justin",
 						   "max_hp":  24.0,
 						   "name":  "贾斯汀",
+						   "pool":  "classic",
 						   "skill_ids":  [
 											 "skill_hope",
 											 "skill_regen",
@@ -129,6 +188,7 @@
 						   "id":  "char_xuwu",
 						   "max_hp":  20.0,
 						   "name":  "序巫",
+						   "pool":  "classic",
 						   "skill_ids":  [
 											 "skill_plague_doctor",
                                              "skill_leap_faith"
@@ -144,6 +204,7 @@
 						   "id":  "char_mowang",
 						   "max_hp":  20,
 						   "name":  "“魔王”",
+						   "pool":  "classic",
 						   "skill_ids":  [
 											 "skill_caged_beast",
                                              "skill_rhythm"
@@ -206,6 +267,7 @@
 						   "id":  "char_liste",
 						   "max_hp":  20,
 						   "name":  "李斯特",
+						   "pool":  "classic",
 						   "skill_ids":  [
 											 "skill_oscillation",
                                              "skill_noise"
@@ -221,6 +283,7 @@
 						   "id":  "char_aubia",
 						   "max_hp":  20,
 						   "name":  "奥比亚",
+						   "pool":  "classic",
 						   "skill_ids":  [
 											 "skill_light_eye",
                                              "skill_peep_eye"

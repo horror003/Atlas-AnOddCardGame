@@ -133,6 +133,24 @@
       "max_layers": 2,
       "name": "「电棱」",
       "trigger": "on_turn_end"
+    },
+    {
+      "description": "〖困兽〗消耗标记：受到伤害时可消耗一层防止该次伤害，然后失去1点生命。至多叠加4层。",
+      "duration": -1,
+      "effects": [],
+      "id": "shackle",
+      "max_layers": 4,
+      "name": "「镣铐」",
+      "trigger": "none"
+    },
+    {
+      "description": "摸牌数值-1，存牌数值-1。持续一回合。",
+      "duration": 1,
+      "effects": [],
+      "id": "peep",
+      "max_layers": 9,
+      "name": "「窥探」",
+      "trigger": "none"
     }
   ]
 }

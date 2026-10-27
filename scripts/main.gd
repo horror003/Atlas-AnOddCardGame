@@ -783,7 +783,13 @@ func _refresh() -> void:
 		c.visible = false
 		c.queue_free()
 	var reserve_clickable := g.mode == AtlasGame.Mode.RESPONSE and String(g.pending.get("kind", "")) == AtlasGame.PENDING_DAMAGE
-	reserve_title.text = "%s 的预备区（%d）%s" % [view.name, view.reserve.size(), "—— 响应中，可点击防御牌直接使用" if reserve_clickable else ""]
+	var leap_playable := g.mode == AtlasGame.Mode.PLAY and view == g.players[g.current] and not view.leap_reserve.is_empty()
+	var reserve_hint := ""
+	if reserve_clickable:
+		reserve_hint = "—— 响应中，可点击防御牌直接使用"
+	elif leap_playable:
+		reserve_hint = "—— 〖跃迁〗扣置牌可点击打出"
+	reserve_title.text = "%s 的预备区（%d）%s" % [view.name, view.reserve.size(), reserve_hint]
 	reserve_title.visible = not view.reserve.is_empty() or reserve_clickable
 	# 分组：防御牌按防御数值堆叠，其他牌单独列出
 	var defense_groups := {}  # defense_value -> Array[int] reserve 索引
@@ -804,13 +810,17 @@ func _refresh() -> void:
 	for dv in dv_keys:
 		var indices: Array = defense_groups[dv]
 		var first_idx := int(indices[0])
-		var first_card := g.db.get_card(view.reserve[first_idx])
+		var first_cid := view.reserve[first_idx]
+		var first_card := g.db.get_card(first_cid)
 		var b := Button.new()
 		b.custom_minimum_size = Vector2(160, 52) if UITheme.is_mobile() else Vector2(140, 40)
-		b.text = "%s x%d" % [String(first_card.get("name", "")), indices.size()]
+		var stack_name := String(first_card.get("name", ""))
+		if view.leap_reserve.has(first_cid):
+			stack_name += "［跃迁］"
+		b.text = "%s x%d" % [stack_name, indices.size()]
 		b.add_theme_font_size_override("font_size", UITheme.fs(13))
 		UITheme.style_button(b, UITheme.card_styles(UITheme.card_color(first_card)))
-		b.disabled = not (reserve_clickable and bool(first_card.get("is_defense", false)))
+		b.disabled = not ((reserve_clickable and bool(first_card.get("is_defense", false))) or (leap_playable and view.leap_reserve.has(first_cid)))
 		var idx := first_idx
 		b.pressed.connect(func(): _on_reserve(idx))
 		reserve_box.add_child(b)
@@ -820,10 +830,13 @@ func _refresh() -> void:
 		var card := g.db.get_card(cid)
 		var b := Button.new()
 		b.custom_minimum_size = Vector2(160, 52) if UITheme.is_mobile() else Vector2(140, 40)
-		b.text = String(card.get("name", cid))
+		var cname := String(card.get("name", cid))
+		if view.leap_reserve.has(cid):
+			cname += "［跃迁］"
+		b.text = cname
 		b.add_theme_font_size_override("font_size", UITheme.fs(13))
 		UITheme.style_button(b, UITheme.card_styles(UITheme.card_color(card)))
-		b.disabled = true
+		b.disabled = not (leap_playable and view.leap_reserve.has(cid))
 		reserve_box.add_child(b)
 
 	# 手牌区
@@ -907,6 +920,18 @@ func _refresh() -> void:
 					prompt_label.text = "〖电离棱体〗：请在弹层中选择要弃掉的牌。"
 				AtlasGame.PENDING_PRAYER_MODE, AtlasGame.PENDING_PRAYER_DISCARD:
 					prompt_label.text = "〖祝祷〗：请在弹层中操作。"
+				AtlasGame.PENDING_SHACKLE_ASK:
+					prompt_label.text = "〖困兽〗：请在弹层中选择是否消耗「镣铐」。"
+				AtlasGame.PENDING_FROLIC_CARD:
+					prompt_label.text = "〖嬉闹〗：请在弹层中选择本回合弃掉的一张牌。"
+				AtlasGame.PENDING_LEAP_TRANSITION:
+					prompt_label.text = "〖跃迁〗：请在弹层中选择摸牌数量。"
+				AtlasGame.PENDING_EXILE_RT_ASK:
+					prompt_label.text = "〖放逐〗：请在弹层中选择是否发动。"
+				AtlasGame.PENDING_SCAB_EAT:
+					prompt_label.text = "〖食痂〗：请在弹层中选择是否清空「痂」。"
+				AtlasGame.PENDING_REORDER_OWN, AtlasGame.PENDING_REORDER_HAND:
+					prompt_label.text = "〖调序〗：请在弹层中操作。"
 				_:
 					prompt_label.text = "技能：请在弹层中选择。"
 		AtlasGame.Mode.DISCARD_PICK:
@@ -1111,6 +1136,21 @@ func _rebuild_skill_pick() -> void:
 	elif kind == AtlasGame.PENDING_PRAYER_DISCARD:
 		var step2 := int(game.pending.get("step", 1))
 		title.text = "〖祝祷〗：请选择第 %d 张要弃掉的牌（共需 2 张）" % step2
+	elif kind == AtlasGame.PENDING_SHACKLE_ASK:
+		title.text = "〖困兽〗：是否消耗一层「镣铐」防止本次伤害？"
+	elif kind == AtlasGame.PENDING_FROLIC_CARD:
+		title.text = "〖嬉闹〗：选择一张本回合弃掉的牌"
+	elif kind == AtlasGame.PENDING_LEAP_TRANSITION:
+		title.text = "〖跃迁〗：选择摸牌数量（扣置于预备区）"
+	elif kind == AtlasGame.PENDING_EXILE_RT_ASK:
+		title.text = "是否发动限定技〖放逐〗？"
+	elif kind == AtlasGame.PENDING_SCAB_EAT:
+		title.text = "〖食痂〗：是否清空所有「痂」回复等量生命？"
+	elif kind == AtlasGame.PENDING_REORDER_OWN:
+		title.text = "〖调序〗：选择你的一张牌弃置"
+	elif kind == AtlasGame.PENDING_REORDER_HAND:
+		var tgt3 := int(game.pending.get("target", game.current))
+		title.text = "〖调序〗：盲选 %s 的一张手牌弃置" % game.players[tgt3].name
 	elif kind == "judge_prompt":
 		title.text = "%s：请选择一项" % String(game.pending.get("source_name", "判定失败"))
 	else:
@@ -1200,6 +1240,30 @@ func _rebuild_skill_pick() -> void:
 		elif kind == AtlasGame.PENDING_PRAYER_MODE:
 			label = "为自己回复 3 点生命" if token == "self" else "为一名其他玩家回复生命"
 			card = {}
+		elif kind == AtlasGame.PENDING_SHACKLE_ASK:
+			label = "消耗一层「镣铐」防止本次伤害" if token == "yes" else "不防止，正常结算"
+			card = {}
+		elif kind == AtlasGame.PENDING_EXILE_RT_ASK:
+			label = "发动〖放逐〗：清空一名其他玩家的所有区域" if token == "yes" else "放弃"
+			card = {}
+		elif kind == AtlasGame.PENDING_SCAB_EAT:
+			label = "清空「痂」并回复等量生命" if token == "yes" else "保留「痂」"
+			card = {}
+		elif kind == AtlasGame.PENDING_LEAP_TRANSITION:
+			label = "摸 %s 张扣置预备区（失去 %d 点生命）" % [token, int(token) * 2]
+			card = {}
+		elif kind == AtlasGame.PENDING_FROLIC_CARD:
+			# 嬉闹：token 形如 "frolic:N"，指向本回合弃牌记录
+			var fidx := int(token.split(":")[1])
+			var fcid := ""
+			var fdisc: Array = game.players[game.current].own_turn_discards
+			if fidx >= 0 and fidx < fdisc.size():
+				fcid = String(fdisc[fidx])
+			card = game.db.get_card(fcid)
+			label = "本回合弃掉：%s" % String(card.get("name", fcid))
+		elif kind == AtlasGame.PENDING_REORDER_HAND:
+			label = "手牌 #%d（背面朝上）" % (int(token.split(":")[1]) + 1)
+			card = {"type": "basic"}
 		else:
 			var parts := token.split(":")
 			var zone_name := "手牌"
@@ -1227,8 +1291,10 @@ func _rebuild_skill_pick() -> void:
 		UITheme.style_button(b, UITheme.card_styles(UITheme.card_color(card)))
 		b.pressed.connect(func(): _on_skill_pick(tok))
 		skill_pick_box.add_child(b)
-	# 掠夺（牌已打出）与开膛手询问（含明确「放弃」项）不显示取消按钮
-	var hide_cancel := kind == AtlasGame.PENDING_PLUNDER or kind == AtlasGame.PENDING_RIPPER_ASK
+	# 掠夺/开膛手询问（含明确「放弃」项）及溯形态强制询问不显示取消按钮
+	var hide_cancel := kind == AtlasGame.PENDING_PLUNDER or kind == AtlasGame.PENDING_RIPPER_ASK \
+		or kind == AtlasGame.PENDING_SHACKLE_ASK or kind == AtlasGame.PENDING_EXILE_RT_ASK \
+		or kind == AtlasGame.PENDING_SCAB_EAT
 	if not hide_cancel:
 		var cancel := Button.new()
 		cancel.text = "取消"
@@ -1300,7 +1366,10 @@ func _on_card(i: int) -> void:
 	_refresh()
 
 func _on_reserve(i: int) -> void:
-	game.ui_play_reserve(i)
+	if game.mode == AtlasGame.Mode.PLAY:
+		game.ui_play_reserve_card(i)
+	else:
+		game.ui_play_reserve(i)
 	_refresh()
 
 # ---------------- 手牌排版 ----------------

@@ -43,6 +43,14 @@ var machine_heal_used: bool = false    # 〖演算机器〗②本回合是否已
 var saint_used: int = 0                # 〖圣徒〗本回合已触发次数（每回合限两次）
 var funerary_this_turn: int = 0        # 〖开膛手〗本回合已掠夺的【陪葬品】数（每回合至多2张）
 var millennium_marks: Dictionary = {}  # 〖千载幽咽〗本回合指定目标：玩家下标 -> true
+var dawn_awakened: bool = false        # 溯〖黎明〗是否已觉醒（生命上限改写为100，解锁〖信仰之跃〗）
+var scab_evolved: bool = false         # 溯〖蚀痕〗是否已觉醒：〖结痂〗进化（每8层痂+1/+1）并解锁〖食痂〗
+var damage_immune: bool = false        # 溯〖余孽〗免疫任何伤害：在其下个出牌阶段开始时清除
+var rhythm_next_boost: bool = false    # 溯〖韵动〗已消耗「镣铐」：下一张打出的牌伤害提升100%
+var attack_minus_this_turn: int = 0    # 溯〖守御〗减益：本回合内使用【普通攻击】造成的伤害降低值
+var guardian_rt_used: bool = false     # 溯〖守御〗本回合是否已触发（每名其他玩家的回合限一次，每回合重置）
+var leap_reserve: Array[String] = []   # 溯〖跃迁〗扣置于预备区的牌（可当作手牌打出）
+var own_turn_discards: Array[String] = []  # 本回合内自己弃掉的牌（溯〖嬉闹〗可选范围）
 
 func has_status(id: String) -> bool:
 	return statuses.has(id)

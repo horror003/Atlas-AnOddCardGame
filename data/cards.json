@@ -632,6 +632,19 @@
 	  ],
 	  "target_type": "none",
 	  "type": "special"
+	},
+	{
+	  "description": "溯阿瑞亚〖余孽〗加入预备区。处于预备区时，你进入濒死状态后无法被其他玩家治疗救助，然后在宣布死亡前，你恢复50%（向上取整）最大生命值，然后弃置此牌。",
+	  "effects": [],
+	  "id": "ark_core",
+	  "is_defense": false,
+	  "name": "【方舟遗芯】",
+	  "subtype": "token",
+	  "tags": [
+		"token"
+	  ],
+	  "target_type": "none",
+	  "type": "special"
 	}
   ],
   "deck_composition": {

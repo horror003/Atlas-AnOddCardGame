@@ -1,6 +1,230 @@
 {
   "skills": [
     {
+      "description": "锁定技。你手牌中的【跳过】都会被转化为【抽牌】。",
+      "effects": [],
+      "id": "skill_noise_retrace",
+      "max_uses_per_turn": 0,
+      "name": "〖喧闹〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "限定技。当你进入濒死状态时，你可以选择一名其他玩家，强制清空其手牌、装备区、陷阱区与预备区的所有牌，视作丢弃。",
+      "effects": [],
+      "id": "skill_exile_retrace",
+      "max_uses_per_turn": 0,
+      "name": "〖放逐〗",
+      "skill_type": "limited",
+      "target_type": "single_enemy"
+    },
+    {
+      "description": "限定技。出牌阶段，你可以将一张【方舟遗芯】加入预备区，然后失去30点生命值。在你下个出牌阶段前，你免疫任何伤害。\n【方舟遗芯】：特殊牌。处于预备区时，你进入濒死状态后无法被其他玩家治疗救助，然后在宣布死亡前，你恢复50%（向上取整）最大生命值，然后弃置此牌。",
+      "effects": [],
+      "id": "skill_remnant",
+      "max_uses_per_turn": 0,
+      "name": "〖余孽〗",
+      "skill_type": "limited",
+      "target_type": "none"
+    },
+    {
+      "description": "出牌阶段限一次。你可以选择你于本回合内弃掉的一张牌，将其加入一名玩家的手牌中。",
+      "effects": [],
+      "id": "skill_frolic",
+      "max_uses_per_turn": 1,
+      "name": "〖嬉闹〗",
+      "skill_type": "active",
+      "target_type": "none"
+    },
+    {
+      "description": "进化技，锁定技。你在你的回合外受到伤害时，将其中40%（向上取整）记录为「痂」。觉醒〖蚀痕〗后，每8层「痂」会使你的存牌数值和摸牌数值各提升1。\n「痂」：记录值。",
+      "effects": [],
+      "id": "skill_scab_retrace",
+      "max_uses_per_turn": 0,
+      "name": "〖结痂〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "觉醒技。出牌阶段开始时，若你的「痂」层数大于20，则清空所有「痂」，回复15点生命，进化〖结痂〗并获得〖食痂〗。",
+      "effects": [],
+      "id": "skill_eclipse",
+      "max_uses_per_turn": 0,
+      "name": "〖蚀痕〗",
+      "skill_type": "awakening",
+      "target_type": "none"
+    },
+    {
+      "description": "需觉醒〖蚀痕〗后解锁。出牌阶段开始时，你可以清空所有「痂」来回复等量生命。",
+      "effects": [],
+      "id": "skill_scab_eat",
+      "max_uses_per_turn": 0,
+      "name": "〖食痂〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "开场技。你失去8点生命，并摸3张牌。",
+      "effects": [
+        {
+          "actions": [
+            {
+              "target": "self",
+              "type": "lose_hp",
+              "value": 8
+            },
+            {
+              "target": "self",
+              "type": "draw_cards",
+              "value": 3
+            }
+          ],
+          "trigger": "on_game_start"
+        }
+      ],
+      "id": "skill_hope_retrace",
+      "max_uses_per_turn": 0,
+      "name": "〖希冀〗",
+      "skill_type": "opening",
+      "target_type": "none"
+    },
+    {
+      "description": "锁定技。你的回合开始时回复2点生命；当你的生命值小于等于11时，改为回复3点；当你的生命值小于等于7时，改为回复4点。",
+      "effects": [],
+      "id": "skill_regen_retrace",
+      "max_uses_per_turn": 0,
+      "name": "〖再生〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "出牌阶段限1次。你可以失去4点生命并选择一名其他玩家，令其回复3点生命。然后，你摸一张牌。",
+      "effects": [
+        {
+          "actions": [
+            {
+              "target": "self",
+              "type": "lose_hp",
+              "value": 4
+            },
+            {
+              "target": "selected",
+              "type": "heal",
+              "value": 3
+            },
+            {
+              "target": "self",
+              "type": "draw_cards",
+              "value": 1
+            }
+          ],
+          "trigger": "on_use"
+        }
+      ],
+      "id": "skill_false_step_retrace",
+      "max_uses_per_turn": 1,
+      "name": "〖失足之幸〗",
+      "skill_type": "active",
+      "target_type": "single_enemy"
+    },
+    {
+      "description": "觉醒技。出牌阶段开始时，若你的生命≥20，则你失去8点生命，将生命上限改写为100，并获得〖信仰之跃〗。",
+      "effects": [],
+      "id": "skill_dawn",
+      "max_uses_per_turn": 0,
+      "name": "〖黎明〗",
+      "skill_type": "awakening",
+      "target_type": "none"
+    },
+    {
+      "description": "锁定技。每名其他玩家的回合限一次。你受到伤害时，进行一次摸牌判定：若判定牌不为基础牌，则对伤害来源造成2点物理伤害；反之，令伤害来源本回合内使用【普通攻击】造成的伤害降低1点。",
+      "effects": [],
+      "id": "skill_guardian_retrace",
+      "max_uses_per_turn": 0,
+      "name": "〖守御〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "出牌阶段开始时，你获得2层「镣铐」。当你受到伤害时，你可以消耗一层「镣铐」，来防止这次伤害，然后你失去1点生命。\n「镣铐」：至多叠加4层。",
+      "effects": [],
+      "id": "skill_caged_beast_retrace",
+      "max_uses_per_turn": 0,
+      "name": "〖困兽〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "开场技。你获得2层「镣铐」。\n「镣铐」：至多叠加4层。",
+      "effects": [
+        {
+          "actions": [
+            {
+              "layers": 2,
+              "status_id": "shackle",
+              "target": "self",
+              "type": "add_status"
+            }
+          ],
+          "trigger": "on_game_start"
+        }
+      ],
+      "id": "skill_restraint",
+      "max_uses_per_turn": 0,
+      "name": "〖约束〗",
+      "skill_type": "opening",
+      "target_type": "none"
+    },
+    {
+      "description": "出牌阶段限一次。你可以消耗一层「镣铐」，来使你打出的下一张牌造成的伤害提升100%。\n「镣铐」：至多叠加4层。",
+      "effects": [],
+      "id": "skill_rhythm_retrace",
+      "max_uses_per_turn": 1,
+      "name": "〖韵动〗",
+      "skill_type": "active",
+      "target_type": "none"
+    },
+    {
+      "description": "出牌阶段限1次。你可以摸1至3张牌并扣置于你的预备区中，然后失去2X点生命值（X为你本次摸牌的数量）。以此法扣置的牌可以当作手牌打出。",
+      "effects": [],
+      "id": "skill_leap_transition",
+      "max_uses_per_turn": 1,
+      "name": "〖跃迁〗",
+      "skill_type": "active",
+      "target_type": "none"
+    },
+    {
+      "description": "当你于你的回合外失去手牌中的或〖跃迁〗扣置的非【防御】牌时，你可以弃掉一张手牌或〖跃迁〗扣置的牌，然后弃掉场上任意玩家的一张手牌。",
+      "effects": [],
+      "id": "skill_reorder",
+      "max_uses_per_turn": 0,
+      "name": "〖调序〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "出牌阶段限一次。你可以选择一名其他玩家，对其施加一层「窥探」。\n「窥探」：摸牌数值-1，存牌数值-1。持续一回合。",
+      "effects": [
+        {
+          "actions": [
+            {
+              "duration": 1,
+              "layers": 1,
+              "status_id": "peep",
+              "target": "selected",
+              "type": "add_status"
+            }
+          ],
+          "trigger": "on_use"
+        }
+      ],
+      "id": "skill_all_seeing",
+      "max_uses_per_turn": 1,
+      "name": "〖全视之眼〗",
+      "skill_type": "active",
+      "target_type": "single_enemy"
+    },
+    {
       "description": "锁定技。你所有的摸牌行为需执行：先摸2x张牌，然后弃掉x张牌。（x为你在本次摸牌行为中需要摸牌的数量）",
       "effects": [],
       "id": "skill_perceive",
