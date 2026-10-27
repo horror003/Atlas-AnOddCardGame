@@ -2850,6 +2850,10 @@ func _notify_cards_lost(p: PlayerData, lost_cards: Array[String], reason: String
 	_heal_with_saint(p, count)
 	_log("%s 触发〖演算机器〗：回合外因%s失去 %d 张非【防御】牌，回复 %d 点生命（%d → %d）。" % [p.name, reason, count, p.hp - old, old, p.hp])
 	_machine_pending.append(idx)
+	# 处于可弹出状态（出牌阶段空闲）时立即弹二选一，不等延迟安全点；
+	# 结算中途（响应窗口/伤害队列未空）仍由 _run_deferred_prompts 延迟弹出
+	if mode == Mode.PLAY and damage_queue.is_empty():
+		_run_deferred_prompts()
 
 # 统一回复入口（带〖圣徒〗钩子）：回复生命值时摸一张牌（每回合限两次），返回实际回复量
 func _heal_with_saint(p: PlayerData, amount: int) -> int:

@@ -378,17 +378,21 @@ func _test_machine_deferred_on_play_enter(t) -> void:
 	var tp := g.players[1]
 	tp.skill_ids.append("skill_computing_machine")
 	tp.hp = 15
-	# 回合外失去非防御牌：回血 + 入队（此时停留在非 PLAY 模式，延迟队列不弹）
+	# 回合外失去非防御牌：回血 + 入队；PLAY 空闲时立即弹二选一
 	g._notify_cards_lost(tp, ["basic_attack"], "被弃置")
 	t.check_eq(tp.hp, 16, "演算机器：回合外失去非防御牌回血")
-	g.mode = AtlasGame.Mode.DISCARD  # 模拟结算中途的非安全点
-	g._run_deferred_prompts()
-	t.check_eq(String(g.pending.get("kind", "")), "", "演算机器：非安全点不弹出")
-	# 进入出牌阶段的安全点：应弹出二选一
+	t.check_eq(g.mode, AtlasGame.Mode.SKILL_PICK, "演算机器：PLAY 空闲时立即弹出二选一")
+	t.check_eq(String(g.pending.get("kind", "")), AtlasGame.PENDING_MACHINE, "演算机器：pending 正确")
+	# 结算中途（非 PLAY 安全点）失去牌：只回血不弹窗，进入出牌阶段的安全点弹出
+	g.mode = AtlasGame.Mode.DISCARD
+	g._notify_cards_lost(tp, ["defend1"], "被弃置")  # 防御牌不触发
+	tp.hand.append("basic_attack")
+	g._notify_cards_lost(tp, ["basic_attack"], "被弃置")
+	t.check_eq(g.mode, AtlasGame.Mode.DISCARD, "演算机器：非安全点不弹出")
 	g.current = 1
 	g._enter_play_phase(tp)
-	t.check_eq(g.mode, AtlasGame.Mode.SKILL_PICK, "演算机器：进入出牌阶段弹出二选一")
-	t.check_eq(String(g.pending.get("kind", "")), AtlasGame.PENDING_MACHINE, "演算机器：pending 正确")
+	t.check_eq(g.mode, AtlasGame.Mode.SKILL_PICK, "演算机器：进入出牌阶段弹出遗留二选一")
+	t.check_eq(String(g.pending.get("kind", "")), AtlasGame.PENDING_MACHINE, "演算机器：遗留 pending 正确")
 
 # ---------------- 溯奥比亚：全视之眼 ----------------
 
