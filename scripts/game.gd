@@ -426,6 +426,10 @@ func ui_confirm_interstitial() -> void:
 		damage_return_to = "judge"
 		_process_damage_queue()
 		return
+	# 判定造成的生命流失只标记濒死、不入伤害队列：此处补开濒死救援窗口，回归点仍为本阶段
+	damage_return_to = "judge"
+	if _ensure_dying_window():
+		return
 	_after_judge()
 
 func _has_skill(p: PlayerData, skill_id: String) -> bool:
@@ -680,6 +684,8 @@ func _enter_play_phase(p: PlayerData) -> void:
 		mode = Mode.SKILL_PICK
 		_log("〖食痂〗：是否清空所有「痂」（%d 层）并回复等量生命？" % p.scab)
 		return
+	# 进入出牌阶段的安全点：弹出回合外事件（如〖演算机器〗）遗留的延迟询问
+	_run_deferred_prompts()
 
 func ui_end_play_phase() -> void:
 	if mode != Mode.PLAY:
@@ -3262,6 +3268,7 @@ func _pick_scab_eat(p: PlayerData, _skill_id: String, token: String) -> void:
 		_log("%s 发动〖食痂〗：清空 %d 层「痂」，回复 %d 点生命（%d → %d）。" % [p.name, val, p.hp - old, old, p.hp])
 	else:
 		_log("%s 保留「痂」（当前 %d 层）。" % [p.name, p.scab])
+	_run_deferred_prompts()
 
 # 溯〖调序〗：回合外失去手牌/跃迁扣置的非【防御】牌时入队（延迟到安全点询问）
 func _notify_reorder(p: PlayerData, lost_cards: Array[String]) -> void:

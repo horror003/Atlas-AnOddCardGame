@@ -21,6 +21,8 @@ func run(t) -> void:
 	_test_exile_rt_decline(t)
 	_test_remnant_ark_core(t)
 	_test_all_seeing_peep(t)
+	_test_judge_phase_dying_window(t)
+	_test_machine_deferred_on_play_enter(t)
 	_test_regen_retrace(t)
 	_test_false_step_retrace(t)
 
@@ -356,6 +358,37 @@ func _test_remnant_ark_core(t) -> void:
 	# 免疫验证：生命流失同样无效
 	g._lose_hp_direct(p, 5, "测试生命流失")
 	t.check_eq(p.hp, 10, "余孽：免疫期间生命流失无效")
+
+# ---------------- 通用流程回归：判定阶段濒死 / 演算机器延迟弹出 ----------------
+
+func _test_judge_phase_dying_window(t) -> void:
+	var g: AtlasGame = t.make_game(2)
+	var p := g.players[0]
+	# 模拟判定阶段生命流失后的状态：已标记濒死、伤害队列为空（不经伤害结算收尾）
+	p.hp = 0
+	p.dying = true
+	g.mode = AtlasGame.Mode.INTERSTITIAL
+	g.current = 0
+	g.ui_confirm_interstitial()
+	t.check_eq(g.mode, AtlasGame.Mode.RESPONSE, "判定阶段：生命流失造成的濒死应立即开救援窗口")
+	t.check_eq(String(g.pending.get("kind", "")), AtlasGame.PENDING_DYING_SAVE, "判定阶段：pending 为濒死救援")
+
+func _test_machine_deferred_on_play_enter(t) -> void:
+	var g: AtlasGame = t.make_game(2)
+	var tp := g.players[1]
+	tp.skill_ids.append("skill_computing_machine")
+	tp.hp = 15
+	# 回合外失去非防御牌：回血 + 入队（此时停留在非 PLAY 模式，延迟队列不弹）
+	g._notify_cards_lost(tp, ["basic_attack"], "被弃置")
+	t.check_eq(tp.hp, 16, "演算机器：回合外失去非防御牌回血")
+	g.mode = AtlasGame.Mode.DISCARD  # 模拟结算中途的非安全点
+	g._run_deferred_prompts()
+	t.check_eq(String(g.pending.get("kind", "")), "", "演算机器：非安全点不弹出")
+	# 进入出牌阶段的安全点：应弹出二选一
+	g.current = 1
+	g._enter_play_phase(tp)
+	t.check_eq(g.mode, AtlasGame.Mode.SKILL_PICK, "演算机器：进入出牌阶段弹出二选一")
+	t.check_eq(String(g.pending.get("kind", "")), AtlasGame.PENDING_MACHINE, "演算机器：pending 正确")
 
 # ---------------- 溯奥比亚：全视之眼 ----------------
 

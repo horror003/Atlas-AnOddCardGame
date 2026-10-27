@@ -837,6 +837,8 @@ func _refresh() -> void:
 		b.add_theme_font_size_override("font_size", UITheme.fs(13))
 		UITheme.style_button(b, UITheme.card_styles(UITheme.card_color(card)))
 		b.disabled = not (leap_playable and view.leap_reserve.has(cid))
+		var ri: int = i
+		b.pressed.connect(func(): _on_reserve(ri))
 		reserve_box.add_child(b)
 
 	# 手牌区
@@ -959,8 +961,9 @@ func _refresh() -> void:
 				b.text = "%s（%s）" % [String(sk.get("name", sid)), "已用" if used else "未用"]
 				b.disabled = used
 			else:
-				# 次数 ≥99 视为不限次数（如〖聚合〗〖开棺〗），不显示剩余次数
-				if left >= 99:
+				# 次数上限 ≥99 视为不限次数（如〖聚合〗〖开棺〗），不显示剩余次数
+				var max_uses := int(sk.get("max_uses_per_turn", 1))
+				if max_uses >= 99:
 					b.text = String(sk.get("name", sid))
 					b.disabled = false
 				else:
@@ -1261,6 +1264,22 @@ func _rebuild_skill_pick() -> void:
 				fcid = String(fdisc[fidx])
 			card = game.db.get_card(fcid)
 			label = "本回合弃掉：%s" % String(card.get("name", fcid))
+		elif kind == AtlasGame.PENDING_REORDER_OWN:
+			# 调序：操作者是触发玩家（pending.source），通常并非当前回合玩家，牌名要按其区域解析
+			var ridx2 := int(game.pending.get("source", game.current))
+			var rp2 := game.players[ridx2]
+			var parts2 := token.split(":")
+			var zidx := int(parts2[1]) if parts2.size() > 1 else -1
+			var rcid := ""
+			var zname := "手牌"
+			if parts2[0] == "reserve":
+				zname = "预备区·跃迁扣置"
+				if zidx >= 0 and zidx < rp2.reserve.size():
+					rcid = rp2.reserve[zidx]
+			elif zidx >= 0 and zidx < rp2.hand.size():
+				rcid = rp2.hand[zidx]
+			card = game.db.get_card(rcid)
+			label = "%s：%s" % [zname, String(card.get("name", rcid))]
 		elif kind == AtlasGame.PENDING_REORDER_HAND:
 			label = "手牌 #%d（背面朝上）" % (int(token.split(":")[1]) + 1)
 			card = {"type": "basic"}
