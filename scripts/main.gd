@@ -691,10 +691,16 @@ func _refresh() -> void:
 					st_joined += " "
 				st_joined += part
 			bb += "[center][color=gold]%s[/color][/center]\n" % st_joined
-		# 预备区（对手可见全部内容）与陷阱（对手仅见数量），卡名可点击查阅
+		# 预备区（对手可见全部内容）与陷阱（对手仅见数量），卡名可点击查阅；【陪葬品】折叠为 ×N
 		var rv_names: Array[String] = []
+		var funerary_n := 0
 		for rv in p.reserve:
+			if rv == "token_funerary":
+				funerary_n += 1
+				continue
 			rv_names.append("[url=card:%s]%s[/url]" % [rv, String(g.db.get_card(rv).get("name", rv))])
+		if funerary_n > 0:
+			rv_names.append("[url=card:token_funerary]【陪葬品】×%d[/url]" % funerary_n)
 		var rv_joined := ""
 		for nm in rv_names:
 			if rv_joined != "":
@@ -837,9 +843,13 @@ func _refresh() -> void:
 		var idx := first_idx
 		b.pressed.connect(func(): _on_reserve(idx))
 		reserve_box.add_child(b)
-	# 非防御牌单独显示
+	# 非防御牌单独显示（【陪葬品】折叠为 ×N 一个按钮，不逐张列出）
+	var funerary_count := 0
 	for i in other_cards:
 		var cid := view.reserve[i]
+		if cid == "token_funerary":
+			funerary_count += 1
+			continue
 		var card := g.db.get_card(cid)
 		var b := Button.new()
 		b.custom_minimum_size = Vector2(160, 52) if UITheme.is_mobile() else Vector2(140, 40)
@@ -853,6 +863,14 @@ func _refresh() -> void:
 		var ri: int = i
 		b.pressed.connect(func(): _on_reserve(ri))
 		reserve_box.add_child(b)
+	if funerary_count > 0:
+		var fb := Button.new()
+		fb.custom_minimum_size = Vector2(160, 52) if UITheme.is_mobile() else Vector2(140, 40)
+		fb.text = "【陪葬品】×%d" % funerary_count
+		fb.add_theme_font_size_override("font_size", UITheme.fs(13))
+		UITheme.style_button(fb, UITheme.card_styles(UITheme.card_color(g.db.get_card("token_funerary"))))
+		fb.disabled = true
+		reserve_box.add_child(fb)
 
 	# 手牌区
 	for c in hand_box.get_children():
