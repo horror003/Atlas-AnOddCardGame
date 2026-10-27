@@ -40,6 +40,18 @@ const PENDING_PEEP_TARGET := "peep_target"
 const PENDING_SAND_BURY_HAND := "sand_bury_hand"
 const PENDING_SAND_BURY_TARGET := "sand_bury_target"
 const PENDING_SAND_BURY_DISCARD := "sand_bury_discard"
+const PENDING_PLUNDER := "plunder"
+const PENDING_MACHINE := "machine_choice"
+const PENDING_PRISM := "prism_card"
+const PENDING_PRISM_TARGET := "prism_target"
+const PENDING_CONVERGE_TARGET := "converge_target"
+const PENDING_PRAYER_MODE := "prayer_mode"
+const PENDING_PRAYER_TARGET := "prayer_target"
+const PENDING_PRAYER_DISCARD := "prayer_discard"
+const PENDING_COFFIN_TARGET := "coffin_target"
+const PENDING_RIPPER_ASK := "ripper_ask"
+const PENDING_MILLENNIUM_ASK := "millennium_ask"
+const PENDING_MILLENNIUM_TARGET := "millennium_target"
 
 const PENDING_KINDS := [
 	PENDING_CARD, PENDING_EVENT, PENDING_EVENT_SHOW, PENDING_SKILL,
@@ -49,6 +61,10 @@ const PENDING_KINDS := [
 	PENDING_MERCY, PENDING_OSC_FORM, PENDING_OSC_TARGET,
 	PENDING_PEEP_HAND, PENDING_PEEP_TARGET,
 	PENDING_SAND_BURY_HAND, PENDING_SAND_BURY_TARGET, PENDING_SAND_BURY_DISCARD,
+	PENDING_PLUNDER, PENDING_MACHINE, PENDING_PRISM, PENDING_PRISM_TARGET,
+	PENDING_CONVERGE_TARGET, PENDING_PRAYER_MODE, PENDING_PRAYER_TARGET,
+	PENDING_PRAYER_DISCARD, PENDING_COFFIN_TARGET, PENDING_RIPPER_ASK,
+	PENDING_MILLENNIUM_ASK, PENDING_MILLENNIUM_TARGET,
 	"judge_prompt",
 ]
 
@@ -88,6 +104,9 @@ var winner_team_id: String = ""       # 获胜队伍 id（单人队时同 winner
 var winner_team_name: String = ""     # 获胜队伍显示名（组队模式使用）
 var winner_members: Array[String] = []  # 获胜队伍成员显示名
 var board: Dictionary = {}             # 当前板子配置（人数 / 队伍 / 座位映射）
+var pool_id: String = "classic"        # 本局牌池：classic 经典 / retrace 溯洄之境（角色池与牌堆过滤）
+var _machine_pending: Array[int] = []  # 〖演算机器〗等待二选一询问的玩家下标队列
+var _ripper_pending: Array[Dictionary] = []  # 〖开膛手〗等待掠夺询问的 {source, defender} 队列
 var _skip_chain: int = 0               # 连续「跳过」计数，用于限制递归深度
 var dev_forced_judge: String = ""     # 开发者菜单：强制下一次判定结果（""=不干预 / success / fail / roll:N）
 
@@ -167,8 +186,9 @@ func _alive_teams() -> Array[String]:
 
 # ---------------- 游戏开始与选人（规则 4.1） ----------------
 
-func start_game(board_id: String = "") -> void:
+func start_game(board_id: String = "", new_pool_id: String = "classic") -> void:
 	# 选人阶段：按板子人数依次选择角色，不可重复（规则 4.1）
+	pool_id = new_pool_id
 	board = db.get_board(board_id) if not board_id.is_empty() else db.default_board()
 	if board.is_empty():
 		board = {
@@ -182,7 +202,9 @@ func start_game(board_id: String = "") -> void:
 	picked_char_ids.clear()
 	mode = Mode.SELECT_CHAR
 	_dying_window_open = false
-	_log("—— 选人阶段：%s（%d 人）——" % [String(board.get("name", "对局")), board_player_count()])
+	_machine_pending.clear()
+	_ripper_pending.clear()
+	_log("—— 选人阶段：%s（%d 人）· 板子：%s ——" % [String(board.get("name", "对局")), board_player_count(), db.pool_name(pool_id)])
 	_log("请 玩家1 选择角色。")
 
 func ui_pick_character(char_id: String) -> void:
@@ -192,6 +214,10 @@ func ui_pick_character(char_id: String) -> void:
 		return
 	var c := db.get_character(char_id)
 	if c.is_empty():
+		return
+	# 牌池过滤：只能选择本局板子对应角色池中的角色
+	if not db.entry_in_pool(c, pool_id):
+		_log("%s 不在当前板子的角色池中。" % String(c.get("name", char_id)))
 		return
 	picked_char_ids.append(char_id)
 	var picked := picked_char_ids.size()
@@ -227,9 +253,10 @@ func _setup_players() -> void:
 		players.append(p)
 	for pl in players:
 		_refresh_limits(pl)
-	# 2. 组建抽牌堆并洗牌
-	for id in db.deck_composition.keys():
-		for i in range(int(db.deck_composition[id])):
+	# 2. 组建抽牌堆并洗牌（按本局牌池过滤，如【掠夺】仅存在于溯洄之境）
+	var deck := db.deck_composition_for_pool(pool_id)
+	for id in deck.keys():
+		for i in range(int(deck[id])):
 			draw_pile.append(String(id))
 	draw_pile.shuffle()
 	# 特殊事件牌堆（独立牌堆，规则 3.3）
@@ -311,8 +338,13 @@ func _prepare_turn() -> void:
 	# 触发回合开始状态效果（如「燃烧」）
 	_trigger_turn_start_statuses(p)
 	# 新回合：重置〖困兽〗与〖韵动〗的每回合计数，并刷新动态摸牌/存牌数值
+	# 同时重置所有玩家的跨回合每回合计数（〖演算机器〗〖圣徒〗〖开膛手〗，回合外也可能触发）
 	for pl in players:
 		pl.caged_beast_used = false
+		pl.machine_draw_used = false
+		pl.machine_heal_used = false
+		pl.saint_used = 0
+		pl.funerary_this_turn = 0
 	_refresh_limits(p)
 	# 〖结痂〗：回复「痂」记录值并清空
 	if _has_skill(p, "skill_scab") and p.scab > 0:
@@ -546,6 +578,11 @@ func _enter_play_phase(p: PlayerData) -> void:
 	mode = Mode.PLAY
 	first_turn = false
 	p.rhythm_used = false
+	# 〖时钟悖论〗的伤害减免持续至出牌阶段前，进入出牌阶段即失效
+	if p.paradox_reduction:
+		p.paradox_reduction = false
+		p.damage_reduction = maxi(0, p.damage_reduction - 1)
+		_log("%s 的〖时钟悖论〗伤害减免失效。" % p.name)
 	_log("—— %s 的出牌阶段 ——" % p.name)
 	# 先结算【窥视】等 play_start 触发的延时判定牌
 	_run_play_start_judge(p)
@@ -569,6 +606,13 @@ func ui_end_play_phase() -> void:
 	var p := players[current]
 	# 出牌阶段结束钩子：结算所有 trigger=on_play_end 的状态效果
 	_trigger_on_play_end_statuses(p)
+	# 派克〖时钟悖论〗：出牌阶段内未使用过【普通攻击】→ 跳过弃牌阶段，获得 1 点伤害减免
+	if _has_skill(p, "skill_clock_paradox") and p.attacks_used_this_turn == 0:
+		p.damage_reduction += 1
+		p.paradox_reduction = true
+		_log("%s 触发〖时钟悖论〗：本回合未使用【普通攻击】，跳过弃牌阶段，获得 1 点伤害减免（持续至其下个出牌阶段前）。" % p.name)
+		_end_turn()
+		return
 	phase = Phase.DISCARD
 	_refresh_limits(p)
 	# 弃牌阶段：手牌超过存牌数值则弃至上限（规则 4.2-4）
@@ -619,9 +663,56 @@ func _end_turn() -> void:
 	# 清理本回合临时状态（如「奋击·攻击+1」的增益，持续时间为"本回合"）
 	if p.has_status("attack_up_1"):
 		p.remove_status("attack_up_1")
+	# 〖千载幽咽〗的指定仅在本回合内有效
+	if not p.millennium_marks.is_empty():
+		p.millennium_marks.clear()
+	# 回合结束状态结算（如「电棱」：可被伤害减免削减，不可被【防御】响应）
+	_trigger_turn_end_statuses(p)
+	# 回合结束结算可能导致濒死：先开救援窗口，救援/死亡处理完毕后再继续交替回合
+	if p.dying and not p.dead:
+		damage_return_to = "end_turn"
+		if _ensure_dying_window():
+			return
+		damage_return_to = "play"
+	_finish_end_turn()
+
+func _finish_end_turn() -> void:
+	## 回合结束收尾：濒死救援完毕（或无需救援）后交替到下一玩家
+	damage_return_to = "play"
 	pending = {}
 	_advance_player()
 	_prepare_turn()
+
+func _trigger_turn_end_statuses(p: PlayerData) -> void:
+	## 回合结束时触发所有 trigger=on_turn_end 的状态（如「电棱」按层数受到物理伤害）
+	if p.dead:
+		return
+	for sid in p.status_ids():
+		var st: Dictionary = db.get_status(sid)
+		if String(st.get("trigger", "")) != "on_turn_end":
+			continue
+		if sid == "electro_prism":
+			var layers := p.status_layer(sid)
+			if layers <= 0:
+				continue
+			_log("%s 的「电棱」结算：%d 层 → 受到 %d 点物理伤害。" % [p.name, layers, layers])
+			_deal_status_damage(players.find(p), layers, "physical", "「电棱」")
+
+func _deal_status_damage(target_idx: int, amount: int, dtype: String, source_name: String) -> void:
+	## 状态造成的伤害：跳过【防御】响应窗口直接结算，但伤害减免与装备减伤正常生效
+	var target := players[target_idx]
+	var amt := _apply_passives_incoming(target, target, "", dtype, amount, target_idx)
+	amt = maxi(0, amt)
+	_settle_damage({
+		"source": target_idx,
+		"defender": target_idx,
+		"amount": amt,
+		"damage_type": dtype,
+		"source_name": source_name,
+		"card_id": "",
+		"card_type": "",
+		"instance": -1,
+	}, 0)
 
 # 当前行动玩家死亡后必须立刻结束其回合，否则死者会继续拥有出牌/技能操作
 func _end_turn_if_current_dead() -> bool:
@@ -849,35 +940,62 @@ func _resolve_played_card(p: PlayerData, card_index: int, card_id: String, card:
 		_resolve_skip(p, target_idx)
 		_ensure_dying_window()  # 「恶化1」等自伤致死时优先开救援窗口
 		return
-	var ctx := {"card_id": card_id, "source_name": card_name, "instance": _card_instance_seq}
-	# 〖韵动〗：每个出牌阶段第一张伤害类型牌的每段伤害 ×2
-	if _card_deals_damage(card) and _has_skill(p, "skill_rhythm") and not p.rhythm_used:
+	# 【掠夺】特殊结算：不触发响应/防御窗口，直接盲选目标一张手牌
+	if card_id == "plunder":
+		_emit_behavior("play_card", current, {"card_id": card_id})
+		if players[target_idx].hand.is_empty():
+			_log("%s 没有手牌，掠夺落空。" % players[target_idx].name)
+			_ensure_dying_window()
+			return
+		_start_plunder(current, target_idx, "card")
+		return
+	if card_id == "basic_attack":
+		_resolve_basic_attack(p, target_idx)
+	else:
+		var ctx := {"card_id": card_id, "source_name": card_name, "instance": _card_instance_seq}
+		# 〖韵动〗：每个出牌阶段第一张伤害类型牌的每段伤害 ×2
+		if _card_deals_damage(card) and _has_skill(p, "skill_rhythm") and not p.rhythm_used:
+			p.rhythm_used = true
+			ctx["rhythm"] = true
+			_log("%s 触发〖韵动〗：%s 的每段伤害提升100%%。" % [p.name, card_name])
+		_run_actions(current, card.get("effects", []), target_idx, ctx)
+	# 陷阱钩子：对手打出牌时触发（规则 3.3）
+	_emit_behavior("play_card", current, {"card_id": card_id})
+	_kick_damage()
+
+# 【普通攻击】统一结算：〖开膛手〗灵魂伤害 / 〖扬沙〗双段 / 默认数据驱动 + 光明之眼/千钧之数钩子
+# 调用方需先完成 attacks_used_this_turn 计数与〖血裔〗结算
+func _resolve_basic_attack(p: PlayerData, target_idx: int) -> void:
+	var target := players[target_idx]
+	var ctx := {"card_id": "basic_attack", "source_name": "【普通攻击】", "instance": _card_instance_seq}
+	if _has_skill(p, "skill_rhythm") and not p.rhythm_used:
 		p.rhythm_used = true
 		ctx["rhythm"] = true
-		_log("%s 触发〖韵动〗：%s 的每段伤害提升100%%。" % [p.name, card_name])
-	# 〖扬沙〗：普攻默认改成 2 次 2 点物理伤害（替代原 data_driven 的 basic_attack 3点）
-	# 必须走 _deal_damage 让困兽/方舟之剑/奋击/韵动/止戈/失明等全部正常生效
-	if card_id == "basic_attack" and _has_skill(p, "skill_sand_wind"):
+		_log("%s 触发〖韵动〗：【普通攻击】的每段伤害提升100%%。" % p.name)
+	if _has_skill(p, "skill_ripper"):
+		# 〖开膛手〗：普攻默认造成 2 点灵魂伤害；〖千载幽咽〗指定目标则为 3 点
+		var soul_val := 3 if p.millennium_marks.has(target_idx) else 2
+		if ctx.has("rhythm"):
+			soul_val *= 2
+		_deal_damage(current, target_idx, soul_val, "soul", "【普通攻击】", "basic_attack")
+		_log("%s 触发〖开膛手〗：【普通攻击】造成 %d 点灵魂伤害。" % [p.name, soul_val])
+	elif _has_skill(p, "skill_sand_wind"):
+		# 〖扬沙〗：普攻默认改成 2 次 2 点物理伤害（必须走 _deal_damage 让困兽/奋击/韵动/止戈/失明等正常生效）
 		var dmg_val := 2
 		if ctx.has("rhythm"):
 			dmg_val *= 2
-		_deal_damage(current, target_idx, dmg_val, "physical", "【普通攻击】（扬沙）", card_id)
-		_deal_damage(current, target_idx, dmg_val, "physical", "【普通攻击】（扬沙）", card_id)
+		_deal_damage(current, target_idx, dmg_val, "physical", "【普通攻击】（扬沙）", "basic_attack")
+		_deal_damage(current, target_idx, dmg_val, "physical", "【普通攻击】（扬沙）", "basic_attack")
 		_log("%s 触发〖扬沙〗：【普通攻击】改为 2×%d 点物理伤害。" % [p.name, dmg_val])
-		# 光明之眼：第一张普攻 → 目标失明
-		if _has_skill(p, "skill_light_eye") and p.attacks_used_this_turn == 1:
-			var c := _add_status_capped(players[target_idx], "blind", 1, -1)
-			if c > 0:
-				_log("%s 触发〖光明之眼〗：%s 获得一层「失明」。" % [p.name, players[target_idx].name])
 	else:
-		_run_actions(current, card.get("effects", []), target_idx, ctx)
-		# 〖光明之眼〗（非扬沙情况）
-		if card_id == "basic_attack" and _has_skill(p, "skill_light_eye") and p.attacks_used_this_turn == 1:
-			var c := _add_status_capped(players[target_idx], "blind", 1, -1)
-			if c > 0:
-				_log("%s 触发〖光明之眼〗：%s 获得一层「失明」。" % [p.name, players[target_idx].name])
+		_run_actions(current, db.get_card("basic_attack").get("effects", []), target_idx, ctx)
+	# 〖光明之眼〗：每回合第一张普攻 → 目标失明
+	if _has_skill(p, "skill_light_eye") and p.attacks_used_this_turn == 1:
+		var c := _add_status_capped(target, "blind", 1, -1)
+		if c > 0:
+			_log("%s 触发〖光明之眼〗：%s 获得一层「失明」。" % [p.name, target.name])
 	# 〖千钧之数〗：普攻附加一次预备区防御点数和×30%（向下取整）的灵魂伤害
-	if card_id == "basic_attack" and _has_skill(p, "skill_thousand_weight"):
+	if _has_skill(p, "skill_thousand_weight"):
 		var extra := int(floor(float(_reserve_defense_total(p)) * 0.3))
 		if extra > 0:
 			damage_queue.append({
@@ -891,9 +1009,6 @@ func _resolve_played_card(p: PlayerData, card_index: int, card_id: String, card:
 				"instance": _card_instance_seq,
 			})
 			_log("〖千钧之数〗追加 %d 点灵魂伤害。" % extra)
-	# 陷阱钩子：对手打出牌时触发（规则 3.3）
-	_emit_behavior("play_card", current, {"card_id": card_id})
-	_kick_damage()
 
 # 【跳过】结算（规则 3.3）：对已有「跳过」者使用=解除；否则其他玩家可打【跳过】抵消
 func _resolve_skip(src_p: PlayerData, target_idx: int) -> void:
@@ -1042,7 +1157,85 @@ func ui_select_target(target_idx: int) -> void:
 		for cid in all_cards:
 			_to_discard(cid)
 		_log("%s 发动〖放逐〗，清空了 %s 的所有区域（共 %d 张牌进入弃牌堆）。" % [players[src].name, tp.name, all_cards.size()])
+		_notify_cards_lost(tp, all_cards, "〖放逐〗")
 		_finalize_dying(src)
+	elif kind == PENDING_PRISM_TARGET:
+		# 电离棱体：pick 层只是暂存（未移除），确认目标后才真正弃牌并施加「电棱」
+		var src := int(pending.get("source", current))
+		var p := players[src]
+		var skill_id := String(pending.get("skill_id", "skill_ion_prism"))
+		var prism_token := String(pending.get("prism_token", ""))
+		pending = {}
+		mode = Mode.PLAY
+		var discarded := _take_zone_card(p, prism_token)
+		if discarded.is_empty():
+			_log("要丢弃的牌已不存在，〖电离棱体〗发动失败。")
+			return
+		_to_discard(discarded)
+		p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
+		_add_status_capped(players[target_idx], "electro_prism", 1, -1)
+		_log("%s 发动〖电离棱体〗：弃 %s → %s 获得一层「电棱」（共 %d 层）。" % [p.name, String(db.get_card(discarded).get("name", discarded)), players[target_idx].name, players[target_idx].status_layer("electro_prism")])
+	elif kind == PENDING_CONVERGE_TARGET:
+		# 聚合：掠夺带 ≥2 层「电棱」者的一张手牌，并清除其所有「电棱」
+		var src2 := int(pending.get("source", current))
+		pending = {}
+		mode = Mode.PLAY
+		var sp2 := players[src2]
+		var tp2 := players[target_idx]
+		sp2.skill_uses_left["skill_converge"] = int(sp2.skill_uses_left.get("skill_converge", 1)) - 1
+		if tp2.hand.is_empty():
+			tp2.remove_status("electro_prism")
+			_log("%s 发动〖聚合〗：%s 没有手牌，掠夺落空，其所有「电棱」已被清除。" % [sp2.name, tp2.name])
+			return
+		_log("%s 发动〖聚合〗：掠夺 %s 的一张手牌。" % [sp2.name, tp2.name])
+		_start_plunder(src2, target_idx, "converge")
+	elif kind == PENDING_PRAYER_TARGET:
+		# 祝祷（为他人回复）：确认目标后进入两步弃牌
+		var skill_id2 := String(pending.get("skill_id", "skill_prayer"))
+		pending = {}
+		_begin_prayer_discards(players[current], skill_id2, target_idx)
+	elif kind == PENDING_COFFIN_TARGET:
+		# 开棺：移除预备区 2 张【陪葬品】，视作打出一张【普通攻击】
+		var src3 := int(pending.get("source", current))
+		var p3 := players[src3]
+		var skill_id3 := String(pending.get("skill_id", "skill_open_coffin"))
+		pending = {}
+		mode = Mode.PLAY
+		var removed := 0
+		for i in range(p3.reserve.size() - 1, -1, -1):
+			if removed >= 2:
+				break
+			if p3.reserve[i] == "token_funerary":
+				p3.reserve.remove_at(i)
+				removed += 1
+		p3.skill_uses_left[skill_id3] = int(p3.skill_uses_left.get(skill_id3, 1)) - 1
+		_log("%s 发动〖开棺〗：将 2 张【陪葬品】视作【普通攻击】打出，目标：%s。" % [p3.name, players[target_idx].name])
+		p3.attacks_used_this_turn += 1
+		if _has_skill(p3, "skill_bloodline"):
+			_apply_bloodline(p3)
+		_card_instance_seq += 1
+		_resolve_basic_attack(p3, target_idx)
+		_emit_behavior("play_card", src3, {"card_id": "basic_attack"})
+		_kick_damage()
+	elif kind == PENDING_MILLENNIUM_TARGET:
+		# 千载幽咽：指定第 1/2 名目标
+		var src4 := int(pending.get("source", current))
+		var p4 := players[src4]
+		pending = {}
+		mode = Mode.PLAY
+		p4.millennium_marks[target_idx] = true
+		_log("%s 将 %s 指定为〖千载幽咽〗的目标。" % [p4.name, players[target_idx].name])
+		if p4.millennium_marks.size() < 2:
+			var more_left := false
+			for i in players.size():
+				if i != src4 and not players[i].dead and not players[i].dying and not p4.millennium_marks.has(i):
+					more_left = true
+			if more_left:
+				_set_pending(PENDING_MILLENNIUM_ASK, {"source": src4, "options": ["more", "done"]})
+				mode = Mode.SKILL_PICK
+				_log("〖千载幽咽〗：是否再指定一名目标？")
+				return
+		_log("〖千载幽咽〗指定完成：本回合 %s 对被指定者的【普通攻击】默认造成 3 点灵魂伤害。" % p4.name)
 
 # 取消选目标（卡牌/技能/转换技/事件/放逐均可取消）
 func ui_cancel_target() -> void:
@@ -1084,6 +1277,22 @@ func ui_cancel_target() -> void:
 		mode = Mode.PLAY
 		_log("%s 放弃发动〖放逐〗。" % players[src].name)
 		_finalize_dying(src)
+	elif kind == PENDING_PRISM_TARGET or kind == PENDING_CONVERGE_TARGET or kind == PENDING_PRAYER_TARGET or kind == PENDING_COFFIN_TARGET:
+		# 这些流程在确认目标前均未产生副作用（牌未移除/次数未扣），直接取消即可
+		pending = {}
+		mode = Mode.PLAY
+		_log("取消了技能发动。")
+	elif kind == PENDING_MILLENNIUM_TARGET:
+		# 千载幽咽：取消视为完成指定（至少已指定 1 名时）；一名未指定则视为放弃发动
+		var src2 := int(pending.get("source", current))
+		var p2 := players[src2]
+		pending = {}
+		mode = Mode.PLAY
+		if p2.millennium_marks.is_empty():
+			p2.limited_used.erase("skill_millennium")
+			_log("%s 放弃了〖千载幽咽〗的发动。" % p2.name)
+		else:
+			_log("〖千载幽咽〗指定完成：本回合 %s 对被指定者的【普通攻击】默认造成 3 点灵魂伤害。" % p2.name)
 
 # 供 UI 查询当前可选目标
 func target_candidates_now() -> Array[int]:
@@ -1104,6 +1313,26 @@ func target_candidates_now() -> Array[int]:
 			if i != src2 and not players[i].dead and players[i].status_layer("pale") > 0:
 				res2.append(i)
 		return res2
+	if kind == PENDING_CONVERGE_TARGET:
+		var res3: Array[int] = []
+		for i in players.size():
+			if i != src_idx and not players[i].dead and players[i].status_layer("electro_prism") >= 2:
+				res3.append(i)
+		return res3
+	if kind == PENDING_PRAYER_TARGET:
+		# 祝祷可为其他存活或「濒死」玩家回复生命
+		var res4: Array[int] = []
+		for i in players.size():
+			if i != src_idx and not players[i].dead:
+				res4.append(i)
+		return res4
+	if kind == PENDING_MILLENNIUM_TARGET:
+		var p2 := players[src_idx]
+		var res5: Array[int] = []
+		for i in players.size():
+			if i != src_idx and not players[i].dead and not players[i].dying and not p2.millennium_marks.has(i):
+				res5.append(i)
+		return res5
 	return _target_candidates_for(src_idx, String(pending.get("target_type", "none")), String(pending.get("card_id", "")))
 
 # 目标候选（规则：「濒死」角色不能再成为伤害/效果目标，治疗与食物除外）
@@ -1190,10 +1419,7 @@ func _execute_action(src_idx: int, action: Dictionary, target_idx: int, ctx: Dic
 			# 规则 5.5：治疗一般不可超过生命上限；治疗可作用于「濒死」角色
 			var p := players[t]
 			var old := p.hp
-			p.hp = mini(p.max_hp, p.hp + int(action.get("value", 0)))
-			if p.hp > 0 and p.dying:
-				p.dying = false
-				_log("%s 脱离了「濒死」。" % p.name)
+			_heal_with_saint(p, int(action.get("value", 0)))
 			_log("%s 回复 %d 点生命（%d → %d）。" % [p.name, p.hp - old, old, p.hp])
 		"random_discard":
 			var p := players[t]
@@ -1203,18 +1429,21 @@ func _execute_action(src_idx: int, action: Dictionary, target_idx: int, ctx: Dic
 				var count := int(action.get("value", 1))
 				var actual := mini(count, p.hand.size())
 				var names: Array[String] = []
+				var lost: Array[String] = []
 				for _i in actual:
 					var r := randi() % p.hand.size()
 					var cid := p.hand[r]
 					p.hand.remove_at(r)
 					_to_discard(cid)
 					names.append(String(db.get_card(cid)["name"]))
+					lost.append(cid)
 				var joined := ""
 				for _n in names:
 					if joined != "":
 						joined += "、"
 					joined += _n
 				_log("随机弃置了 %s 的 %d 张手牌（%s）。" % [p.name, actual, joined])
+				_notify_cards_lost(p, lost, "随机弃置")
 		"discard_target_pick":
 			var p := players[t]
 			if p.hand.is_empty():
@@ -1461,6 +1690,8 @@ func _after_damage_queue() -> void:
 		_after_judge()
 	else:
 		mode = Mode.PLAY
+		# 伤害结算完毕后的安全点：弹出延迟询问（〖开膛手〗掠夺 / 〖演算机器〗二选一）
+		_run_deferred_prompts()
 
 # 存在濒死角色且当前没有已打开的救援窗口时开窗；返回是否新开窗
 func _ensure_dying_window() -> bool:
@@ -1492,10 +1723,14 @@ func _finalize_dying(idx: int) -> void:
 		_check_deaths()
 		if mode == Mode.GAME_OVER:
 			return
+		if damage_return_to == "end_turn":
+			_finish_end_turn()
+			return
 		if damage_return_to == "judge":
 			_after_judge()
 		else:
 			mode = Mode.PLAY
+			_run_deferred_prompts()
 		return
 	# 限定技〖放逐〗：宣布死亡时询问一次（可选择不发动）
 	if _has_skill(p, "skill_exile") and not bool(p.limited_used.get("skill_exile", false)) and not _exile_done.has(idx):
@@ -1532,10 +1767,14 @@ func _finalize_dying(idx: int) -> void:
 	# 濒死者就是当前行动玩家时，其回合必须就地结束（自伤/状态致死）
 	if _end_turn_if_current_dead():
 		return
+	if damage_return_to == "end_turn":
+		_finish_end_turn()
+		return
 	if damage_return_to == "judge":
 		_after_judge()
 	else:
 		mode = Mode.PLAY
+		_run_deferred_prompts()
 
 # 结算单次伤害实例
 func _settle_damage(d: Dictionary, blocked: int) -> void:
@@ -1543,6 +1782,11 @@ func _settle_damage(d: Dictionary, blocked: int) -> void:
 	var dtype := String(d["damage_type"])
 	var dmg: int = maxi(0, int(d["amount"]) - blocked)
 	var type_name := String(DAMAGE_TYPE_NAMES.get(dtype, dtype))
+	# 伤害减免（〖时钟悖论〗等）：每次受到非生命流失伤害时等额削减
+	if dtype != "hp_loss" and dmg > 0 and defender.damage_reduction > 0:
+		var reduced := mini(dmg, defender.damage_reduction)
+		dmg -= reduced
+		_log("%s 的伤害减免生效：本次%s伤害 -%d。" % [defender.name, type_name, reduced])
 	if dmg > 0:
 		defender.hp -= dmg
 		if dtype == "hp_loss":
@@ -1579,6 +1823,9 @@ func _settle_damage(d: Dictionary, blocked: int) -> void:
 				var c4 := _add_status_capped(src_p, "stop_sword", 1, -1)
 				if c4 > 0:
 					_log("%s 触发〖止戈〗：%s 获得一层「止戈」（%d 层）。" % [defender.name, src_p.name, src_p.status_layer("stop_sword")])
+			# 瑞普〖开膛手〗：普攻对其他玩家造成伤害后，延迟询问是否掠夺其手牌扣置为【陪葬品】
+			if _has_skill(src_p, "skill_ripper") and String(d.get("card_id", "")) == "basic_attack":
+				_ripper_pending.append({"source": int(d["source"]), "defender": int(d["defender"])})
 		# 〖守御〗：受到特殊攻击伤害时进行一次摸牌判定，非基础牌则反击2点物理，单张牌只触发一次
 		if _has_skill(defender, "skill_guardian") and String(d.get("card_type", "")) == "special_attack" and not self_hit:
 			var inst := int(d.get("instance", -1))
@@ -1978,6 +2225,11 @@ const SKILL_SPECIAL_HANDLERS := {
 	"skill_peep_eye": "_skill_peep_eye",
 	"skill_oscillation": "_skill_oscillation",
 	"skill_sand_burial": "_skill_sand_burial",
+	"skill_ion_prism": "_skill_ion_prism",
+	"skill_converge": "_skill_converge",
+	"skill_prayer": "_skill_prayer",
+	"skill_open_coffin": "_skill_open_coffin",
+	"skill_millennium": "_skill_millennium",
 }
 
 # 技能选牌处理：pending kind -> 处理函数
@@ -1991,6 +2243,13 @@ const SKILL_PICK_HANDLERS := {
 	PENDING_OSC_FORM: "_pick_osc_form",
 	PENDING_PEEP_HAND: "_pick_peep_hand",
 	PENDING_SAND_BURY_HAND: "_pick_sand_bury_hand",
+	PENDING_PLUNDER: "_pick_plunder",
+	PENDING_MACHINE: "_pick_machine",
+	PENDING_PRISM: "_pick_prism",
+	PENDING_PRAYER_MODE: "_pick_prayer_mode",
+	PENDING_PRAYER_DISCARD: "_pick_prayer_discard",
+	PENDING_RIPPER_ASK: "_pick_ripper_ask",
+	PENDING_MILLENNIUM_ASK: "_pick_millennium_ask",
 	"judge_prompt": "_pick_judge_prompt",
 }
 
@@ -2005,7 +2264,7 @@ func ui_use_skill(skill_id: String) -> void:
 	# 限定技：每局一次，检查 limited_used
 	if stype == "limited":
 		if bool(p.limited_used.get(skill_id, false)):
-			_log("〖引雷〗已在本局发动过。")
+			_log("%s 已在本局发动过。" % String(skill.get("name", skill_id)))
 			return
 	# 觉醒技能（沙葬）：未觉醒时不可用
 	if skill_id == "skill_sand_burial" and not p.star_brilliance_awakened:
@@ -2187,6 +2446,351 @@ func _skill_sand_burial(p: PlayerData, _skill: Dictionary, skill_id: String) -> 
 	mode = Mode.SKILL_PICK
 	_log("〖沙葬〗：请选择第一张要弃置的牌。")
 	return true
+
+# ---------------- 溯洄之境：掠夺 / 演算机器 / 新角色技能 ----------------
+
+# 掠夺入口：从目标区域拿一张牌入来源对应区域。
+# 手牌=盲选（UI 只显示数量与背面）；装备/预备/陷阱=明牌自选。目标全空→落空记日志。
+func _start_plunder(src_idx: int, target_idx: int, purpose: String, hand_only: bool = true) -> bool:
+	var sp := players[src_idx]
+	var tp := players[target_idx]
+	var opts: Array[String] = []
+	for i in tp.hand.size():
+		opts.append("hand:%d" % i)
+	if not hand_only:
+		for i in tp.equipment.size():
+			opts.append("equip:%d" % i)
+		for i in tp.reserve.size():
+			opts.append("reserve:%d" % i)
+		for i in tp.traps.size():
+			opts.append("trap:%d" % i)
+	if opts.is_empty():
+		_log("%s 尝试掠夺 %s，但其区域内没有可掠夺的牌，掠夺落空。" % [sp.name, tp.name])
+		return false
+	_set_pending(PENDING_PLUNDER, {"source": src_idx, "target": target_idx, "purpose": purpose, "options": opts})
+	mode = Mode.SKILL_PICK
+	_log("%s 正在掠夺 %s：请选择要夺取的牌。" % [sp.name, tp.name])
+	return true
+
+func _pick_plunder(_p: PlayerData, _skill_id: String, token: String) -> void:
+	var src := int(pending.get("source", current))
+	var tgt := int(pending.get("target", -1))
+	var purpose := String(pending.get("purpose", "card"))
+	if tgt < 0:
+		pending = {}
+		mode = Mode.PLAY
+		return
+	var sp := players[src]
+	var tp := players[tgt]
+	var cid := _take_zone_card(tp, token)
+	if cid.is_empty():
+		pending = {}
+		mode = Mode.PLAY
+		return
+	pending = {}
+	mode = Mode.PLAY
+	var cname := String(db.get_card(cid).get("name", cid))
+	if purpose == "ripper":
+		# 〖开膛手〗：原牌进入弃牌堆，预备区扣置一张白板【陪葬品】
+		_to_discard(cid)
+		sp.reserve.append("token_funerary")
+		sp.funerary_this_turn += 1
+		_log("%s 掠夺了 %s 的一张手牌（%s 入弃牌堆），扣置一张【陪葬品】于预备区（本回合 %d/2，储存 %d/6）。" % [sp.name, tp.name, cname, sp.funerary_this_turn, _funerary_count(sp)])
+	else:
+		# 加入来源对应区域（当前用途均为手牌 → 手牌）
+		var zone := String(token.split(":")[0])
+		match zone:
+			"hand":
+				sp.hand.append(cid)
+			"equip":
+				sp.equipment.append(cid)
+			"reserve":
+				sp.reserve.append(cid)
+			"trap":
+				sp.traps.append(cid)
+			_:
+				sp.hand.append(cid)
+		_log("%s 掠夺了 %s 的一张牌：%s 加入自己的%s。" % [sp.name, tp.name, cname, {"hand": "手牌", "equip": "装备栏", "reserve": "预备区", "trap": "陷阱区"}.get(zone, "手牌")])
+		if purpose == "converge":
+			tp.remove_status("electro_prism")
+			_log("%s 的所有「电棱」标记被清除。" % tp.name)
+	# 〖演算机器〗：目标回合外失去非【防御】牌时触发
+	_notify_cards_lost(tp, [cid], "被掠夺")
+	_run_deferred_prompts()
+
+func _funerary_count(p: PlayerData) -> int:
+	var n := 0
+	for cid in p.reserve:
+		if cid == "token_funerary":
+			n += 1
+	return n
+
+# 〖演算机器〗：回合外失去区域内非【防御】的牌时，回复等量生命，并延迟弹出二选一
+func _notify_cards_lost(p: PlayerData, lost_cards: Array[String], reason: String) -> void:
+	if lost_cards.is_empty() or p.dead:
+		return
+	if not _has_skill(p, "skill_computing_machine"):
+		return
+	var idx := players.find(p)
+	if idx == current or idx < 0:
+		return  # 仅回合外触发
+	var count := 0
+	for cid in lost_cards:
+		if not bool(db.get_card(cid).get("is_defense", false)):
+			count += 1
+	if count <= 0:
+		return
+	var old := p.hp
+	_heal_with_saint(p, count)
+	_log("%s 触发〖演算机器〗：回合外因%s失去 %d 张非【防御】牌，回复 %d 点生命（%d → %d）。" % [p.name, reason, count, p.hp - old, old, p.hp])
+	_machine_pending.append(idx)
+
+# 统一回复入口（带〖圣徒〗钩子）：回复生命值时摸一张牌（每回合限两次），返回实际回复量
+func _heal_with_saint(p: PlayerData, amount: int) -> int:
+	var old := p.hp
+	p.hp = mini(p.max_hp, p.hp + amount)
+	if p.hp > 0 and p.dying:
+		p.dying = false
+		_log("%s 脱离了「濒死」。" % p.name)
+	var healed := p.hp - old
+	if healed > 0 and _has_skill(p, "skill_saint") and p.saint_used < 2:
+		p.saint_used += 1
+		_draw_cards(p, 1)
+		_log("%s 触发〖圣徒〗：回复生命值后摸一张牌（本回合 %d/2）。" % [p.name, p.saint_used])
+	return healed
+
+# 安全点（mode==PLAY 且伤害队列已空）弹出延迟询问：先〖开膛手〗掠夺，再〖演算机器〗二选一
+func _run_deferred_prompts() -> void:
+	if players.is_empty() or mode != Mode.PLAY or not damage_queue.is_empty():
+		return
+	while not _ripper_pending.is_empty():
+		var item: Dictionary = _ripper_pending[0]
+		_ripper_pending.remove_at(0)
+		var src := int(item.get("source", -1))
+		var tgt := int(item.get("defender", -1))
+		if src < 0 or tgt < 0:
+			continue
+		var sp := players[src]
+		var tp := players[tgt]
+		# 弹出时校验：双方存活、目标有手牌、本回合掠夺 <2 张、储存 <6 张
+		if sp.dead or tp.dead or tp.hand.is_empty():
+			continue
+		if sp.funerary_this_turn >= 2 or _funerary_count(sp) >= 6:
+			continue
+		_set_pending(PENDING_RIPPER_ASK, {"source": src, "defender": tgt, "options": ["yes", "no"]})
+		mode = Mode.SKILL_PICK
+		_log("%s 的【普通攻击】对 %s 造成了伤害：是否触发〖开膛手〗掠夺其一张手牌？" % [sp.name, tp.name])
+		return
+	while not _machine_pending.is_empty():
+		var midx := _machine_pending[0]
+		_machine_pending.remove_at(0)
+		var mp := players[midx]
+		if mp.dead:
+			continue
+		var opts: Array[String] = []
+		if not mp.machine_draw_used:
+			opts.append("draw")
+		if not mp.machine_heal_used:
+			opts.append("heal")
+		opts.append("skip")
+		if opts.size() == 1:
+			continue  # 两项均已用完，不再询问
+		_set_pending(PENDING_MACHINE, {"source": midx, "options": opts})
+		mode = Mode.SKILL_PICK
+		_log("%s 触发〖演算机器〗：请选择一项（每回合各限一次）。" % mp.name)
+		return
+
+# 〖开膛手〗询问：yes → 掠夺；no → 放弃
+func _pick_ripper_ask(_p: PlayerData, _skill_id: String, token: String) -> void:
+	var src := int(pending.get("source", current))
+	var tgt := int(pending.get("defender", -1))
+	pending = {}
+	mode = Mode.PLAY
+	if token != "yes" or tgt < 0:
+		_log("%s 放弃〖开膛手〗的掠夺。" % players[src].name)
+		_run_deferred_prompts()
+		return
+	_start_plunder(src, tgt, "ripper")
+
+# 〖演算机器〗二选一：①摸一张牌；②回复 2 点生命；skip 放弃
+func _pick_machine(_p: PlayerData, _skill_id: String, token: String) -> void:
+	var midx := int(pending.get("source", current))
+	var mp := players[midx]
+	pending = {}
+	mode = Mode.PLAY
+	if token == "draw":
+		mp.machine_draw_used = true
+		_log("%s 选择〖演算机器〗①：摸一张牌。" % mp.name)
+		_draw_cards(mp, 1)
+	elif token == "heal":
+		mp.machine_heal_used = true
+		var old := mp.hp
+		_heal_with_saint(mp, 2)
+		_log("%s 选择〖演算机器〗②：回复 2 点生命（%d → %d）。" % [mp.name, old, mp.hp])
+	else:
+		_log("%s 放弃〖演算机器〗的选择。" % mp.name)
+	if mode != Mode.DISCARD_PICK:
+		_run_deferred_prompts()
+
+# 元明〖电离棱体〗：弃自己区域 1 张牌 → 对一名其他玩家施加 1 层「电棱」
+func _skill_ion_prism(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	var opts := _zone_card_options(p)
+	if opts.is_empty():
+		_log("你的区域内没有可弃掉的牌，〖电离棱体〗发动失败。")
+		return true
+	if _target_candidates("single_enemy", "").is_empty():
+		_log("没有其他合法玩家，〖电离棱体〗发动失败。")
+		return true
+	_set_pending(PENDING_PRISM, {"skill_id": skill_id, "options": opts})
+	mode = Mode.SKILL_PICK
+	_log("〖电离棱体〗：请选择你区域中要弃掉的 1 张牌（确认目标后才真正弃置）。")
+	return true
+
+func _pick_prism(p: PlayerData, skill_id: String, token: String) -> void:
+	# 参照贤者之书：pick 层只暂存不移除，目标确认后才真弃
+	var cid := _take_zone_card(p, token, false)
+	if cid.is_empty():
+		return
+	_set_pending(PENDING_PRISM_TARGET, {
+		"source": current,
+		"skill_id": skill_id,
+		"target_type": "single_enemy",
+		"prism_token": token,
+	})
+	mode = Mode.SELECT_TARGET
+	_log("〖电离棱体〗：请选择要施加「电棱」的目标。")
+
+# 元明〖聚合〗：掠夺带 ≥2 层「电棱」者的一张手牌并清除其所有「电棱」
+func _skill_converge(_p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	var has_target := false
+	for i in players.size():
+		if i != current and not players[i].dead and players[i].status_layer("electro_prism") >= 2:
+			has_target = true
+			break
+	if not has_target:
+		_log("场上没有携带 ≥2 层「电棱」的玩家，〖聚合〗发动失败。")
+		return true
+	_set_pending(PENDING_CONVERGE_TARGET, {"source": current, "skill_id": skill_id, "target_type": "single_enemy"})
+	mode = Mode.SELECT_TARGET
+	_log("〖聚合〗：请选择一名携带 ≥2 层「电棱」的玩家。")
+	return true
+
+# 十修〖祝祷〗：弃 2 张牌 → 自己回 3，或为他人回复 ceil(20% 已损)+3
+func _skill_prayer(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	if _zone_card_options(p).size() < 2:
+		_log("你区域中的牌不足 2 张，〖祝祷〗发动失败。")
+		return true
+	_set_pending(PENDING_PRAYER_MODE, {"skill_id": skill_id, "options": ["self", "other"]})
+	mode = Mode.SKILL_PICK
+	_log("〖祝祷〗：请选择回复对象。")
+	return true
+
+func _pick_prayer_mode(p: PlayerData, skill_id: String, token: String) -> void:
+	if token == "self":
+		_begin_prayer_discards(p, skill_id, -1)
+		return
+	var candidates := _target_candidates("single_enemy", "")
+	var has_other := not candidates.is_empty()
+	var has_dying := false
+	if not has_other:
+		for i in players.size():
+			if i != current and players[i].dying and not players[i].dead:
+				has_dying = true
+	if not has_other and not has_dying:
+		_log("没有其他合法玩家，〖祝祷〗发动失败。")
+		pending = {}
+		mode = Mode.PLAY
+		return
+	_set_pending(PENDING_PRAYER_TARGET, {"skill_id": skill_id, "target_type": "single_enemy"})
+	mode = Mode.SELECT_TARGET
+	_log("请选择〖祝祷〗的目标（可为「濒死」角色回复）。")
+
+func _begin_prayer_discards(p: PlayerData, skill_id: String, target_idx: int) -> void:
+	var opts := _zone_card_options(p)
+	if opts.size() < 2:
+		_log("你区域中的牌不足 2 张，〖祝祷〗发动失败。")
+		mode = Mode.PLAY
+		return
+	_set_pending(PENDING_PRAYER_DISCARD, {"skill_id": skill_id, "prayer_target": target_idx, "step": 1, "options": opts})
+	mode = Mode.SKILL_PICK
+	_log("〖祝祷〗：请选择第 1 张要弃掉的牌（共需弃 2 张）。")
+
+func _pick_prayer_discard(p: PlayerData, skill_id: String, token: String) -> void:
+	var step := int(pending.get("step", 1))
+	if step == 1:
+		var cid := _take_zone_card(p, token)
+		if cid.is_empty():
+			pending = {}
+			mode = Mode.PLAY
+			return
+		pending["first_card"] = cid
+		pending["first_zone_token"] = token  # 记录原始位置，取消时恢复
+		pending["step"] = 2
+		pending["options"] = _zone_card_options(p)
+		_rebuild_skill_pick_immediate()
+		_log("〖祝祷〗：请选择第 2 张要弃掉的牌。")
+		return
+	var cid2 := _take_zone_card(p, token)
+	if cid2.is_empty():
+		return
+	var cid1 := String(pending.get("first_card", ""))
+	var target_idx := int(pending.get("prayer_target", -1))
+	pending = {}
+	mode = Mode.PLAY
+	_to_discard(cid1)
+	_to_discard(cid2)
+	_finalize_prayer(p, skill_id, target_idx, cid1, cid2)
+	_kick_damage()
+
+func _finalize_prayer(p: PlayerData, skill_id: String, target_idx: int, cid1: String, cid2: String) -> void:
+	p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
+	var n1 := String(db.get_card(cid1).get("name", cid1))
+	var n2 := String(db.get_card(cid2).get("name", cid2))
+	if target_idx < 0:
+		var old := p.hp
+		_heal_with_saint(p, 3)
+		_log("%s 发动〖祝祷〗：弃 %s、%s → 自己回复 %d 点生命（%d → %d）。" % [p.name, n1, n2, p.hp - old, old, p.hp])
+		return
+	var t := players[target_idx]
+	var amount := _ceil_pct(t.max_hp - t.hp, 20) + 3
+	var old2 := t.hp
+	_heal_with_saint(t, amount)
+	_log("%s 发动〖祝祷〗：弃 %s、%s → %s 回复 %d 点生命（%d → %d）。" % [p.name, n1, n2, t.name, t.hp - old2, old2, t.hp])
+
+# 瑞普〖开棺〗：将预备区 2 张【陪葬品】视作 1 张【普通攻击】打出
+func _skill_open_coffin(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	if _funerary_count(p) < 2:
+		_log("预备区中的【陪葬品】不足 2 张，〖开棺〗发动失败。")
+		return true
+	if _target_candidates("single_enemy", "").is_empty():
+		_log("没有合法目标，〖开棺〗发动失败。")
+		return true
+	_set_pending(PENDING_COFFIN_TARGET, {"source": current, "skill_id": skill_id, "target_type": "single_enemy"})
+	mode = Mode.SELECT_TARGET
+	_log("〖开棺〗：将 2 张【陪葬品】视作【普通攻击】，请选择目标。")
+	return true
+
+# 瑞普〖千载幽咽〗（限定技）：指定至多 2 名其他玩家，本回合对其普攻默认 3 点灵魂伤害
+func _skill_millennium(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	if _target_candidates("single_enemy", "").is_empty():
+		_log("没有其他合法玩家，〖千载幽咽〗发动失败。")
+		return true
+	p.limited_used[skill_id] = true
+	p.millennium_marks.clear()
+	_set_pending(PENDING_MILLENNIUM_TARGET, {"source": current, "skill_id": skill_id, "target_type": "single_enemy"})
+	mode = Mode.SELECT_TARGET
+	_log("〖千载幽咽〗：请选择第 1 名指定目标（本回合你对其的【普通攻击】默认造成 3 点灵魂伤害）。")
+	return true
+
+func _pick_millennium_ask(_p: PlayerData, _skill_id: String, token: String) -> void:
+	if token == "more":
+		_set_pending(PENDING_MILLENNIUM_TARGET, {"source": current, "target_type": "single_enemy"})
+		mode = Mode.SELECT_TARGET
+		_log("〖千载幽咽〗：请选择第 2 名指定目标。")
+		return
+	pending = {}
+	mode = Mode.PLAY
+	_log("〖千载幽咽〗指定完成。")
 
 # 数据驱动的弃牌堆检索：技能效果含 retrieve_defense 时先选牌
 func _try_retrieve_defense(skill: Dictionary, skill_id: String) -> bool:
@@ -2503,6 +3107,25 @@ func ui_cancel_skill_pick() -> void:
 		_log("%s 放弃发动〖放逐〗。" % players[dying_idx].name)
 		_finalize_dying(dying_idx)
 		return
+	if kind == PENDING_RIPPER_ASK:
+		var src_r := int(pending.get("source", current))
+		pending = {}
+		mode = Mode.PLAY
+		_log("%s 放弃〖开膛手〗的掠夺。" % players[src_r].name)
+		_run_deferred_prompts()
+		return
+	if kind == PENDING_MACHINE:
+		var midx := int(pending.get("source", current))
+		pending = {}
+		mode = Mode.PLAY
+		_log("%s 放弃〖演算机器〗的选择。" % players[midx].name)
+		_run_deferred_prompts()
+		return
+	if kind == PENDING_MILLENNIUM_ASK:
+		pending = {}
+		mode = Mode.PLAY
+		_log("〖千载幽咽〗指定完成。")
+		return
 	var p := players[current]
 	# 恢复被 _take_zone_card 从 hand/equip/reserve 移走的牌（避免凭空消失）
 	# 流程提示：
@@ -2511,10 +3134,11 @@ func ui_cancel_skill_pick() -> void:
 	#                    step=2 后进入 SELECT_TARGET → 取消走 ui_cancel_target（已修）
 	#   sand_bury:       step=1 可取消（first_card 在 SKILL_PICK）→ 按 zone_token 恢复
 	#                    step=2 选完直接结算，无法中途取消 → 不需要恢复
+	#   prayer_discard:  step=2 可取消（first_card 在 SKILL_PICK）→ 按 zone_token 恢复
 	var sub_kind := String(pending.get("sub_kind", ""))
 	# 只要 pending 里还存着 first_card，就说明这张牌已被 _take_zone_card 从区域移走、
 	# 但副作用尚未执行（无论当前处于 step 1 还是 step 2），取消时都必须按原始区域归还。
-	if pending.has("first_card") and (sub_kind == "osc_discard" or sub_kind == "sand_bury"):
+	if pending.has("first_card") and (sub_kind == "osc_discard" or sub_kind == "sand_bury" or kind == PENDING_PRAYER_DISCARD):
 		var cid_r := String(pending.get("first_card", ""))
 		var zt := String(pending.get("first_zone_token", ""))
 		if not cid_r.is_empty():
@@ -2542,6 +3166,10 @@ func ui_discard_picked(card_id: String) -> void:
 	p.hand.remove_at(idx)
 	_to_discard(card_id)
 	_log("%s 弃置了 %s。" % [p.name, String(db.get_card(card_id)["name"])])
+	# 累计本次被弃的牌（供〖演算机器〗结算）
+	var lost: Array = pending.get("lost_cards", [])
+	lost.append(card_id)
+	pending["lost_cards"] = lost
 	var remaining := int(pending.get("count", 1)) - 1
 	if remaining > 0 and not p.hand.is_empty():
 		pending["count"] = remaining
@@ -2549,13 +3177,22 @@ func ui_discard_picked(card_id: String) -> void:
 	else:
 		var was_setup := bool(pending.get("setup", false))
 		var was_turn_draw := (not was_setup) and phase == Phase.DRAW and target_idx == current and not p.dead
+		var picker := String(pending.get("picker", ""))
+		var lost_cards: Array[String] = []
+		for c in lost:
+			lost_cards.append(String(c))
 		pending = {}
 		mode = Mode.PLAY
+		# 〖演算机器〗：回合外被他人选弃（picker=="actor"）时触发
+		if picker == "actor":
+			_notify_cards_lost(p, lost_cards, "被弃置")
 		if was_setup:
 			_process_setup_draw()
 		elif was_turn_draw:
 			# 己方回合摸牌阶段触发的洞悉弃牌：弃完后继续进入出牌阶段，而不是切给下一位玩家
 			_enter_play_phase(p)
+		else:
+			_run_deferred_prompts()
 
 func ui_cancel_discard_pick() -> void:
 	if mode != Mode.DISCARD_PICK:

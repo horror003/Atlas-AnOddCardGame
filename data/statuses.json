@@ -124,6 +124,15 @@
       "max_layers": 3,
       "name": "「止戈」",
       "trigger": "on_play_end"
+    },
+    {
+      "description": "回合结束时受到相当于层数的物理伤害（可被伤害减免削减，不可被【防御】响应）。至多携带 2 层，被〖聚合〗清除。",
+      "duration": -1,
+      "effects": [],
+      "id": "electro_prism",
+      "max_layers": 2,
+      "name": "「电棱」",
+      "trigger": "on_turn_end"
     }
   ]
 }

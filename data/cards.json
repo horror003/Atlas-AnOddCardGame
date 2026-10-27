@@ -602,6 +602,36 @@
 	  "target_type": "single_enemy",
 	  "type": "special",
 	  "zone": "reserve"
+	},
+	{
+	  "defense_value": 0,
+	  "description": "掠夺目标一张手牌，\n加入自己的手牌中。",
+	  "effects": [],
+	  "id": "plunder",
+	  "is_defense": false,
+	  "name": "【掠夺】",
+	  "pool": "retrace",
+	  "subtype": "control",
+	  "tags": [
+		"control",
+		"basic"
+	  ],
+	  "target_type": "single_enemy",
+	  "type": "basic"
+	},
+	{
+	  "defense_value": 0,
+	  "description": "瑞普〖开膛手〗掠夺所得的战利品，扣置于预备区。2 张【陪葬品】可视作 1 张【普通攻击】打出（〖开棺〗）。",
+	  "effects": [],
+	  "id": "token_funerary",
+	  "is_defense": false,
+	  "name": "【陪葬品】",
+	  "subtype": "token",
+	  "tags": [
+		"token"
+	  ],
+	  "target_type": "none",
+	  "type": "special"
 	}
   ],
   "deck_composition": {
@@ -619,6 +649,7 @@
 	"food_potion1": 2,
 	"ignite": 2,
 	"magic_bolt": 3,
+	"plunder": 4,
 	"refresh": 2,
 	"skip": 3,
 	"special_event": 4,

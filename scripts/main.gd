@@ -194,7 +194,7 @@ func _ready() -> void:
 	_build_ui()
 	game = AtlasGame.new()
 	game.message.connect(_on_log)
-	game.start_game(GameSession.board_id)
+	game.start_game(GameSession.board_id, GameSession.pool_id)
 	if OS.is_debug_build():
 		dev_menu = DevMenu.new()
 		dev_menu.game = game
@@ -893,7 +893,22 @@ func _refresh() -> void:
 		AtlasGame.Mode.DISCARD:
 			prompt_label.text = "弃牌阶段：点击手牌弃置，还需弃 %d 张。" % (cur.hand.size() - cur.hand_limit)
 		AtlasGame.Mode.SKILL_PICK:
-			prompt_label.text = "技能：请选择一张防御牌加入手牌。"
+			var spk := String(g.pending.get("kind", ""))
+			match spk:
+				AtlasGame.PENDING_PLUNDER:
+					prompt_label.text = "掠夺：请在弹层中选择要夺取的牌（手牌为盲选）。"
+				AtlasGame.PENDING_RIPPER_ASK:
+					prompt_label.text = "〖开膛手〗：请在弹层中选择是否掠夺。"
+				AtlasGame.PENDING_MACHINE:
+					prompt_label.text = "〖演算机器〗：请在弹层中选择一项。"
+				AtlasGame.PENDING_MILLENNIUM_ASK:
+					prompt_label.text = "〖千载幽咽〗：请在弹层中选择是否再指定一名目标。"
+				AtlasGame.PENDING_PRISM:
+					prompt_label.text = "〖电离棱体〗：请在弹层中选择要弃掉的牌。"
+				AtlasGame.PENDING_PRAYER_MODE, AtlasGame.PENDING_PRAYER_DISCARD:
+					prompt_label.text = "〖祝祷〗：请在弹层中操作。"
+				_:
+					prompt_label.text = "技能：请在弹层中选择。"
 		AtlasGame.Mode.DISCARD_PICK:
 			prompt_label.text = "%s 请点击下方手牌选择 %d 张弃置。" % [String(g.db.get_skill("skill_perceive").get("name", "洞悉")), int(g.pending.get("count", 0))]
 		_:
@@ -919,8 +934,13 @@ func _refresh() -> void:
 				b.text = "%s（%s）" % [String(sk.get("name", sid)), "已用" if used else "未用"]
 				b.disabled = used
 			else:
-				b.text = "%s（剩%d）" % [String(sk.get("name", sid)), left]
-				b.disabled = left <= 0
+				# 次数 ≥99 视为不限次数（如〖聚合〗〖开棺〗），不显示剩余次数
+				if left >= 99:
+					b.text = String(sk.get("name", sid))
+					b.disabled = false
+				else:
+					b.text = "%s（剩%d）" % [String(sk.get("name", sid)), left]
+					b.disabled = left <= 0
 			b.custom_minimum_size = Vector2(0, _abtn_h())
 			# 狄瑟〖沙葬〗：未觉醒时置灰不可用
 			if sid == "skill_sand_burial" and not cur.star_brilliance_awakened:
@@ -1001,6 +1021,9 @@ func _rebuild_char_pick() -> void:
 	hint.text = "选人结束后随机分配座位与先手"
 	char_pick_box.add_child(hint)
 	for c in g.db.characters:
+		# 牌池过滤：仅显示本局板子对应角色池中的角色
+		if not g.db.entry_in_pool(c, g.pool_id):
+			continue
 		var cid := String(c.get("id", ""))
 		var b := Button.new()
 		b.custom_minimum_size = Vector2(460, 76)
@@ -1063,6 +1086,31 @@ func _rebuild_skill_pick() -> void:
 			title.text = "〖振荡〗形态①：请选择第 %d 张手牌弃置（共需 2 张）" % step
 		else:
 			title.text = "〖沙葬〗：请选择第 %d 张要弃置的牌（从手牌/装备/预备区中选）" % step
+	elif kind == AtlasGame.PENDING_PLUNDER:
+		var purpose := String(game.pending.get("purpose", ""))
+		var tgt_idx := int(game.pending.get("target", game.current))
+		if purpose == "ripper":
+			title.text = "〖开膛手〗：盲选 %s 的一张手牌扣置为【陪葬品】" % game.players[tgt_idx].name
+		elif purpose == "converge":
+			title.text = "〖聚合〗：盲选 %s 的一张手牌" % game.players[tgt_idx].name
+		else:
+			title.text = "【掠夺】：盲选 %s 的一张手牌" % game.players[tgt_idx].name
+	elif kind == AtlasGame.PENDING_MACHINE:
+		var midx := int(game.pending.get("source", game.current))
+		title.text = "%s 触发〖演算机器〗：请选择一项" % game.players[midx].name
+	elif kind == AtlasGame.PENDING_RIPPER_ASK:
+		var src_idx := int(game.pending.get("source", game.current))
+		var tgt2 := int(game.pending.get("defender", game.current))
+		title.text = "%s 是否触发〖开膛手〗掠夺 %s 的一张手牌？" % [game.players[src_idx].name, game.players[tgt2].name]
+	elif kind == AtlasGame.PENDING_MILLENNIUM_ASK:
+		title.text = "〖千载幽咽〗：是否再指定一名目标？"
+	elif kind == AtlasGame.PENDING_PRISM:
+		title.text = "〖电离棱体〗：选择你区域中要弃掉的 1 张牌"
+	elif kind == AtlasGame.PENDING_PRAYER_MODE:
+		title.text = "〖祝祷〗：请选择回复对象"
+	elif kind == AtlasGame.PENDING_PRAYER_DISCARD:
+		var step2 := int(game.pending.get("step", 1))
+		title.text = "〖祝祷〗：请选择第 %d 张要弃掉的牌（共需 2 张）" % step2
 	elif kind == "judge_prompt":
 		title.text = "%s：请选择一项" % String(game.pending.get("source_name", "判定失败"))
 	else:
@@ -1111,6 +1159,47 @@ func _rebuild_skill_pick() -> void:
 				var choice: Dictionary = choices[idx]
 				label = String(choice.get("label", token))
 			card = {}
+		elif kind == AtlasGame.PENDING_PLUNDER:
+			# 掠夺：手牌盲选（只显示序号与背面），公开区域显示目标玩家的实际牌名
+			var parts_p := token.split(":")
+			var tgt_idx := int(game.pending.get("target", game.current))
+			var tp: PlayerData = game.players[tgt_idx]
+			var zi := int(parts_p[1]) if parts_p.size() > 1 else -1
+			if parts_p[0] == "hand":
+				label = "手牌 #%d（背面朝上）" % (zi + 1)
+				card = {"type": "basic"}
+			else:
+				var cid_p := ""
+				if parts_p[0] == "equip" and zi >= 0 and zi < tp.equipment.size():
+					cid_p = tp.equipment[zi]
+				elif parts_p[0] == "reserve" and zi >= 0 and zi < tp.reserve.size():
+					cid_p = tp.reserve[zi]
+				elif parts_p[0] == "trap" and zi >= 0 and zi < tp.traps.size():
+					cid_p = tp.traps[zi]
+				card = game.db.get_card(cid_p)
+				var zn := "装备区"
+				if parts_p[0] == "reserve":
+					zn = "预备区"
+				elif parts_p[0] == "trap":
+					zn = "陷阱区"
+				label = "%s：%s" % [zn, String(card.get("name", cid_p))]
+		elif kind == AtlasGame.PENDING_MACHINE:
+			if token == "draw":
+				label = "① 摸一张牌"
+			elif token == "heal":
+				label = "② 回复 2 点生命"
+			else:
+				label = "放弃"
+			card = {}
+		elif kind == AtlasGame.PENDING_RIPPER_ASK:
+			label = "掠夺其一张手牌" if token == "yes" else "放弃"
+			card = {}
+		elif kind == AtlasGame.PENDING_MILLENNIUM_ASK:
+			label = "再指定一名目标" if token == "more" else "完成指定"
+			card = {}
+		elif kind == AtlasGame.PENDING_PRAYER_MODE:
+			label = "为自己回复 3 点生命" if token == "self" else "为一名其他玩家回复生命"
+			card = {}
 		else:
 			var parts := token.split(":")
 			var zone_name := "手牌"
@@ -1138,11 +1227,14 @@ func _rebuild_skill_pick() -> void:
 		UITheme.style_button(b, UITheme.card_styles(UITheme.card_color(card)))
 		b.pressed.connect(func(): _on_skill_pick(tok))
 		skill_pick_box.add_child(b)
-	var cancel := Button.new()
-	cancel.text = "取消"
-	cancel.custom_minimum_size = _overlay_btn_size(280, 44)
-	cancel.pressed.connect(_on_cancel_skill_pick)
-	skill_pick_box.add_child(cancel)
+	# 掠夺（牌已打出）与开膛手询问（含明确「放弃」项）不显示取消按钮
+	var hide_cancel := kind == AtlasGame.PENDING_PLUNDER or kind == AtlasGame.PENDING_RIPPER_ASK
+	if not hide_cancel:
+		var cancel := Button.new()
+		cancel.text = "取消"
+		cancel.custom_minimum_size = _overlay_btn_size(280, 44)
+		cancel.pressed.connect(_on_cancel_skill_pick)
+		skill_pick_box.add_child(cancel)
 
 func _rebuild_discard_pick() -> void:
 	for c in discard_pick_box.get_children():

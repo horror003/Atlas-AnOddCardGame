@@ -310,6 +310,113 @@
       "name": "〖窥伺之眼〗",
       "skill_type": "active",
       "target_type": "single_enemy"
+    },
+    {
+      "description": "出牌阶段限一次。你可以弃掉你区域中的1张牌来对一名其他玩家施加一层「电棱」标记。\n「电棱」：回合结束时受到相当于层数的物理伤害，至多携带2层。",
+      "effects": [],
+      "id": "skill_ion_prism",
+      "max_uses_per_turn": 1,
+      "name": "〖电离棱体〗",
+      "skill_type": "active",
+      "target_type": "single_enemy"
+    },
+    {
+      "description": "出牌阶段，当场上存在一名带有≥2层「电棱」标记的玩家时，你可以掠夺其一张手牌并清除其所有「电棱」标记。",
+      "effects": [],
+      "id": "skill_converge",
+      "max_uses_per_turn": 99,
+      "name": "〖聚合〗",
+      "skill_type": "active",
+      "target_type": "single_enemy"
+    },
+    {
+      "description": "锁定技。若你在一个出牌阶段内未使用过【普通攻击】，则你跳过该回合的弃牌阶段，并获得1点伤害减免，持续至你的下个出牌阶段前。",
+      "effects": [],
+      "id": "skill_clock_paradox",
+      "max_uses_per_turn": 0,
+      "name": "〖时钟悖论〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "当你于你的回合外失去你区域内非【防御】的牌时，你回复相当于失去的牌数的生命值，并可选择一项：\n①每回合限一次。摸一张牌；\n②每回合限一次。回复2点生命。",
+      "effects": [],
+      "id": "skill_computing_machine",
+      "max_uses_per_turn": 0,
+      "name": "〖演算机器〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "出牌阶段限一次。你可以弃掉你区域中的2张牌来为自己回复3点生命，或为一名其他玩家回复其20%（向上取整）已损生命值+3点生命。",
+      "effects": [],
+      "id": "skill_prayer",
+      "max_uses_per_turn": 1,
+      "name": "〖祝祷〗",
+      "skill_type": "active",
+      "target_type": "none"
+    },
+    {
+      "description": "锁定技。每回合限两次。当你回复生命值时，摸一张牌。",
+      "effects": [],
+      "id": "skill_saint",
+      "max_uses_per_turn": 0,
+      "name": "〖圣徒〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "出牌阶段限一次。你可以选择一名其他玩家，对其造成3点灵魂伤害，然后你失去2点生命。",
+      "effects": [
+        {
+          "actions": [
+            {
+              "damage_type": "soul",
+              "target": "selected",
+              "type": "deal_damage",
+              "value": 3
+            },
+            {
+              "target": "self",
+              "type": "lose_hp",
+              "value": 2
+            }
+          ],
+          "trigger": "on_use"
+        }
+      ],
+      "id": "skill_guardian_way",
+      "max_uses_per_turn": 1,
+      "name": "〖卫道〗",
+      "skill_type": "active",
+      "target_type": "single_enemy"
+    },
+    {
+      "description": "锁定技。你的【普通攻击】默认造成2点灵魂伤害。当你的【普通攻击】对其他玩家造成伤害后，你可以掠夺目标一张手牌并将其扣置于你的预备区，视为【陪葬品】。每回合至多掠夺2张【陪葬品】。至多储存6张【陪葬品】。",
+      "effects": [],
+      "id": "skill_ripper",
+      "max_uses_per_turn": 0,
+      "name": "〖开膛手〗",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "出牌阶段内，你可以将2张【陪葬品】视作1张【普通攻击】打出。",
+      "effects": [],
+      "id": "skill_open_coffin",
+      "max_uses_per_turn": 99,
+      "name": "〖开棺〗",
+      "skill_type": "active",
+      "target_type": "single_enemy"
+    },
+    {
+      "description": "限定技。出牌阶段，你可以指定至多2名其他玩家，本回合内你对被指定的目标使用的【普通攻击】默认造成3灵魂伤害。",
+      "effects": [],
+      "id": "skill_millennium",
+      "max_uses_per_turn": 0,
+      "name": "〖千载幽咽〗",
+      "skill_type": "limited",
+      "target_type": "single_enemy"
     }
   ]
 }

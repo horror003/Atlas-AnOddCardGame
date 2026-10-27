@@ -36,6 +36,13 @@ var rhythm_used: bool = false          # 本回合出牌阶段是否已触发〖
 var guardian_seen_seq: int = -1        # 〖守御〗已触发过的卡牌实例序号
 var oscillation_mode: int = 0          # 〖振荡〗当前形态 0=①弃2视作跳过 / 1=②摸2自加跳过
 var star_brilliance_awakened: bool = false  # 〖星辉〗是否已觉醒（解锁沙葬）
+var damage_reduction: int = 0          # 伤害减免：每次受到非生命流失伤害时等额削减（〖时钟悖论〗等）
+var paradox_reduction: bool = false    # 〖时钟悖论〗减免标记：在其下个出牌阶段开始时清除
+var machine_draw_used: bool = false    # 〖演算机器〗①本回合是否已选（每回合限一次）
+var machine_heal_used: bool = false    # 〖演算机器〗②本回合是否已选（每回合限一次）
+var saint_used: int = 0                # 〖圣徒〗本回合已触发次数（每回合限两次）
+var funerary_this_turn: int = 0        # 〖开膛手〗本回合已掠夺的【陪葬品】数（每回合至多2张）
+var millennium_marks: Dictionary = {}  # 〖千载幽咽〗本回合指定目标：玩家下标 -> true
 
 func has_status(id: String) -> bool:
 	return statuses.has(id)

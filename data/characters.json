@@ -1,4 +1,4 @@
-{
+﻿{
 	"characters":  [
 					   {
 						   "attribute_ids":  [
@@ -224,6 +224,72 @@
 						   "skill_ids":  [
 											 "skill_light_eye",
                                              "skill_peep_eye"
+										 ]
+					   },
+					   {
+						   "attribute_ids":  [
+												 "time",
+												 "space"
+											 ],
+						   "draw_limit":  5,
+						   "hand_limit":  3,
+						   "id":  "char_yuanming",
+						   "max_hp":  20,
+						   "name":  "元明",
+						   "pool":  "retrace",
+						   "skill_ids":  [
+											 "skill_ion_prism",
+											 "skill_converge"
+										 ]
+					   },
+					   {
+						   "attribute_ids":  [
+												 "time",
+												 "info"
+											 ],
+						   "draw_limit":  5,
+						   "hand_limit":  3,
+						   "id":  "char_pike",
+						   "max_hp":  20,
+						   "name":  "派克",
+						   "pool":  "retrace",
+						   "skill_ids":  [
+											 "skill_clock_paradox",
+											 "skill_computing_machine"
+										 ]
+					   },
+					   {
+						   "attribute_ids":  [
+												 "life",
+												 "space"
+											 ],
+						   "draw_limit":  5,
+						   "hand_limit":  3,
+						   "id":  "char_shixiu",
+						   "max_hp":  20,
+						   "name":  "十修",
+						   "pool":  "retrace",
+						   "skill_ids":  [
+											 "skill_prayer",
+											 "skill_saint",
+											 "skill_guardian_way"
+										 ]
+					   },
+					   {
+						   "attribute_ids":  [
+												 "life",
+												 "info"
+											 ],
+						   "draw_limit":  5,
+						   "hand_limit":  3,
+						   "id":  "char_ripu",
+						   "max_hp":  20,
+						   "name":  "瑞普",
+						   "pool":  "retrace",
+						   "skill_ids":  [
+											 "skill_ripper",
+											 "skill_open_coffin",
+											 "skill_millennium"
 										 ]
 					   }
 				   ]

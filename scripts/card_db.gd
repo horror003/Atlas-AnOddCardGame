@@ -101,6 +101,15 @@ func _validate() -> void:
 				issues.append("装备组合 %s 的 parts 引用了不存在的卡牌：%s" % [combo_id, pid])
 			elif String(part.get("type", "")) != "equipment":
 				issues.append("装备组合 %s 的 parts 引用了非装备牌：%s" % [combo_id, pid])
+	# 牌池字段合法性（缺省=通用；只允许 classic / retrace / all）
+	for c in characters:
+		var cpool := String(c.get("pool", ""))
+		if not ["", "all", "classic", "retrace"].has(cpool):
+			issues.append("角色 %s 的 pool 字段无效：%s" % [String(c.get("id", "?")), cpool])
+	for cid in cards.keys():
+		var kpool := String(cards[cid].get("pool", ""))
+		if not ["", "all", "classic", "retrace"].has(kpool):
+			issues.append("卡牌 %s 的 pool 字段无效：%s" % [cid, kpool])
 	var seen: Dictionary = {}
 	_check_refs("卡牌", cards.values(), issues, seen)
 	_check_refs("技能", skills.values(), issues, seen)
@@ -246,3 +255,38 @@ func board_ids() -> Array[String]:
 	for b in boards:
 		out.append(String(b.get("id", "")))
 	return out
+
+# ---------------- 牌池（板子变体：经典 / 溯洄之境） ----------------
+# 条目 pool 字段缺省 = 两个池通用；"classic" = 仅经典；"retrace" = 仅溯洄之境。
+
+const POOLS := [
+	{"id": "classic", "name": "经典"},
+	{"id": "retrace", "name": "溯洄之境"},
+]
+
+func entry_in_pool(entry: Dictionary, pool: String) -> bool:
+	var p := String(entry.get("pool", ""))
+	return p.is_empty() or p == "all" or p == pool
+
+func characters_for_pool(pool: String) -> Array:
+	## 指定牌池可用的角色定义列表（引用，勿改）
+	var out: Array = []
+	for c in characters:
+		if entry_in_pool(c, pool):
+			out.append(c)
+	return out
+
+func deck_composition_for_pool(pool: String) -> Dictionary:
+	## 指定牌池的抽牌堆构成：卡牌 id -> 数量（按卡牌 pool 字段过滤）
+	var out: Dictionary = {}
+	for cid in deck_composition.keys():
+		var card: Dictionary = cards.get(String(cid), {})
+		if entry_in_pool(card, pool):
+			out[String(cid)] = int(deck_composition[cid])
+	return out
+
+func pool_name(pool: String) -> String:
+	for p in POOLS:
+		if String(p.get("id", "")) == pool:
+			return String(p.get("name", pool))
+	return pool
