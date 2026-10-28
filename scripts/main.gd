@@ -276,11 +276,39 @@ func _build_ui() -> void:
 	menu_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/launcher.tscn"))
 	top.add_child(menu_btn)
 
-	# 玩家面板（2 人 1×2 / 3 人 1×3 / 4 人 2×2），兼作目标选择按钮与拖放目标
+	# 玩家面板行：左为面板网格（2 人 1×2 / 3 人 1×3 / 4 人 2×2），右为战场状态栏
+	var players_row := HBoxContainer.new()
+	players_row.add_theme_constant_override("separation", 8)
+	root.add_child(players_row)
 	players_bar = GridContainer.new()
 	players_bar.add_theme_constant_override("h_separation", 10)
 	players_bar.add_theme_constant_override("v_separation", 6)
-	root.add_child(players_bar)
+	players_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	players_row.add_child(players_bar)
+	# 战场状态栏：最近触发的特殊事件等战场信息，点击查看事件全文
+	var field_panel := PanelContainer.new()
+	field_panel.add_theme_stylebox_override("panel", UITheme.flat(UITheme.BG_PANEL, UITheme.BORDER, 8, 1))
+	field_panel.custom_minimum_size = Vector2(120 if UITheme.is_mobile() else 150, 0)
+	players_row.add_child(field_panel)
+	var field_vbox := VBoxContainer.new()
+	field_vbox.add_theme_constant_override("separation", 4)
+	field_panel.add_child(field_vbox)
+	var event_title := Label.new()
+	event_title.text = "战场"
+	event_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	event_title.add_theme_color_override("font_color", UITheme.ACCENT)
+	event_title.add_theme_font_size_override("font_size", UITheme.fs(13))
+	field_vbox.add_child(event_title)
+	field_vbox.add_child(HSeparator.new())
+	event_bar = VBoxContainer.new()
+	event_bar.add_theme_constant_override("separation", 3)
+	field_vbox.add_child(event_bar)
+	var event_empty0 := Label.new()
+	event_empty0.text = "（无事件）"
+	event_empty0.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	event_empty0.add_theme_font_size_override("font_size", UITheme.fs(11))
+	event_empty0.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	event_bar.add_child(event_empty0)
 	# 先建 2 个占位面板；_refresh 会按实际板子人数重建
 	_rebuild_player_panels(2)
 
@@ -346,21 +374,6 @@ func _build_ui() -> void:
 	prompt_label = Label.new()
 	prompt_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	prompt_panel.add_child(prompt_label)
-	# 战场事件栏：最近触发的特殊事件，点击查看事件全文
-	side.add_child(HSeparator.new())
-	var event_title := Label.new()
-	event_title.text = "战场事件"
-	event_title.add_theme_color_override("font_color", UITheme.ACCENT)
-	event_title.add_theme_font_size_override("font_size", UITheme.fs(13))
-	side.add_child(event_title)
-	event_bar = VBoxContainer.new()
-	event_bar.add_theme_constant_override("separation", 3)
-	side.add_child(event_bar)
-	var event_empty0 := Label.new()
-	event_empty0.text = "（尚未触发事件）"
-	event_empty0.add_theme_font_size_override("font_size", UITheme.fs(11))
-	event_empty0.add_theme_color_override("font_color", UITheme.TEXT_DIM)
-	event_bar.add_child(event_empty0)
 	# 上一回合弃牌信息放在最下方，内容超长时可由侧栏独立滚动查看
 	side.add_child(HSeparator.new())
 	discard_info_label = Label.new()
@@ -681,7 +694,8 @@ func _refresh() -> void:
 		c.queue_free()
 	if g.recent_events.is_empty():
 		var empty_l := Label.new()
-		empty_l.text = "（尚未触发事件）"
+		empty_l.text = "（无事件）"
+		empty_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty_l.add_theme_font_size_override("font_size", UITheme.fs(11))
 		empty_l.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 		event_bar.add_child(empty_l)
