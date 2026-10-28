@@ -1113,7 +1113,7 @@ func _refresh() -> void:
 	event_show_layer.visible = (g.mode == AtlasGame.Mode.EVENT_SHOW)
 	if event_show_layer.visible:
 		var event := g.db.get_event(String(g.pending.get("event_id", "")))
-		event_show_label.text = _bbcode("%s\n\n%s" % [String(event.get("name", "")), String(event.get("description", ""))])
+		event_show_label.text = _strip_marks("%s\n\n%s" % [String(event.get("name", "")), String(event.get("description", ""))])
 	game_over_layer.visible = (g.mode == AtlasGame.Mode.GAME_OVER)
 	if game_over_layer.visible:
 		var team_name := g.winner_team_name
@@ -1625,8 +1625,8 @@ func _on_event_show_confirm() -> void:
 	game.ui_confirm_event_show()
 	_refresh()
 
-## 数据中的 *...* 装饰文本（事件的氛围描述）转 BBCode 斜体
-func _bbcode(text: String) -> String:
+## 数据中的 *...* 装饰文本标记（事件的氛围描述）：剥除星号后原样展示
+func _strip_marks(text: String) -> String:
 	var out := ""
 	var rest := text
 	while true:
@@ -1638,13 +1638,13 @@ func _bbcode(text: String) -> String:
 		if b < 0:
 			out += rest
 			break
-		out += rest.substr(0, a) + "[i]" + rest.substr(a + 1, b - a - 1) + "[/i]"
+		out += rest.substr(0, a) + rest.substr(a + 1, b - a - 1)
 		rest = rest.substr(b + 1)
 	return out
 
 func _show_info(title: String, desc: String) -> void:
 	info_popup_title.text = title
-	info_popup_desc.text = _bbcode(desc)
+	info_popup_desc.text = _strip_marks(desc)
 	info_popup.visible = true
 
 # 玩家面板富文本词条点击：状态 / 痂 / 濒死 / 死亡 / 预备区卡牌
