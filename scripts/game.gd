@@ -63,6 +63,7 @@ const PENDING_SCAB_EAT := "scab_eat"              # 溯〖食痂〗：出牌阶�
 const PENDING_REORDER_OWN := "reorder_own"        # 溯〖调序〗：选自己一张牌弃置
 const PENDING_REORDER_TARGET := "reorder_target"  # 溯〖调序〗：选场上任意玩家
 const PENDING_REORDER_HAND := "reorder_hand"      # 溯〖调序〗：盲选其一张手牌
+const PENDING_EVENT_CHOICE := "event_choice"      # 『被遗弃者』：二选一
 
 const PENDING_KINDS := [
 	PENDING_CARD, PENDING_EVENT, PENDING_EVENT_SHOW, PENDING_SKILL,
@@ -79,6 +80,7 @@ const PENDING_KINDS := [
 	PENDING_SHACKLE_ASK, PENDING_FROLIC_CARD, PENDING_FROLIC_TARGET,
 	PENDING_LEAP_TRANSITION, PENDING_EXILE_RT_ASK, PENDING_EXILE_RT_TARGET,
 	PENDING_SCAB_EAT, PENDING_REORDER_OWN, PENDING_REORDER_TARGET, PENDING_REORDER_HAND,
+	PENDING_EVENT_CHOICE,
 	"judge_prompt",
 ]
 
@@ -106,7 +108,8 @@ var first_turn: bool = true
 var draw_pile: Array[String] = []     # 抽牌堆（全场共用，规则 3.1）
 var discard_pile: Array[String] = []  # 弃牌堆（全场共用）
 var event_deck: Array[String] = []    # 特殊事件牌堆（独立，规则 3.3）
-var recent_events: Array[String] = [] # 最近触发的特殊事件 id（侧栏「战场事件」展示，最新在末位，至多 3 条）
+var recent_events: Array[String] = [] # 最近触发的特殊事件 id（「战场」栏展示，最新在末位，至多 3 条）
+var witch_hunt_owner: int = -1        # 『猎巫运动』触发者下标（-1 = 未生效）；持续至其下个回合开始
 
 var turn_discards: Array[String] = []      # 本回合进入弃牌堆的牌
 var last_turn_discards: Array[String] = [] # 上一回合进入弃牌堆的牌（信息公开，规则 6.1）
@@ -227,6 +230,7 @@ func start_game(board_id: String = "", new_pool_id: String = "classic") -> void:
 	_reorder_pending.clear()
 	_exile_done.clear()
 	recent_events.clear()
+	witch_hunt_owner = -1
 	_log("—— 选人阶段：%s（%d 人）· 板子：%s ——" % [String(board.get("name", "对局")), board_player_count(), db.pool_name(pool_id)])
 	_log("请 玩家1 选择角色。")
 
@@ -330,6 +334,10 @@ func _finish_setup() -> void:
 # ---------------- 回合流程（规则 4.2） ----------------
 
 func _prepare_turn() -> void:
+	# 『猎巫运动』持续至触发者的下个回合开始时解除（触发者被「跳过」也视为到达）
+	if witch_hunt_owner >= 0 and witch_hunt_owner == current:
+		witch_hunt_owner = -1
+		_log("『猎巫运动』的效果结束了。")
 	# 信息公开：每回合开始时快照上一回合进入弃牌堆的牌（规则 6.1）
 	last_turn_discards = turn_discards.duplicate()
 	turn_discards.clear()
@@ -611,6 +619,11 @@ func _after_judge() -> void:
 	if p.dead:
 		return
 	_refresh_limits(p)
+	# 「饥荒」：下个回合开始时不能摸牌（施加时持续 2，回合开始 tick 后剩 1；触发者本回合不受影响）
+	if int(p.statuses.get("famine", 0)) == 1:
+		_log("%s 受「饥荒」影响：本回合不能摸牌。" % p.name)
+		_enter_play_phase(p)
+		return
 	# 摸牌阶段：将手牌补至摸牌数值（规则 4.2-2）
 	phase = Phase.DRAW
 	var need := p.draw_limit - p.hand.size()
@@ -643,6 +656,11 @@ func _enter_play_phase(p: PlayerData) -> void:
 	_run_play_start_judge(p)
 	if mode != Mode.PLAY:
 		return  # 可能被 prompt_choice 中断
+	# 「黄印」：出牌阶段开始时失去 2 点生命（永久持续）
+	if p.has_status("yellow_sign"):
+		_lose_hp_direct(p, 2, "「黄印」")
+		if _ensure_dying_window():
+			return
 	# 溯〖黎明〗觉醒：生命 ≥20 → 失去 8 点生命，生命上限改写为 100，获得〖信仰之跃〗
 	if _has_skill(p, "skill_dawn") and not p.dawn_awakened and p.hp >= 20:
 		p.dawn_awakened = true
@@ -693,6 +711,18 @@ func ui_end_play_phase() -> void:
 	if mode != Mode.PLAY:
 		return
 	var p := players[current]
+	# 「饥荒」：下个回合结束时弃掉所有手牌，替代正常弃牌阶段（触发者本回合不受影响）
+	if int(p.statuses.get("famine", 0)) == 1:
+		p.remove_status("famine")
+		if not p.hand.is_empty():
+			var n := p.hand.size()
+			for cid in p.hand:
+				_to_discard(cid)
+				p.own_turn_discards.append(cid)
+			p.hand.clear()
+			_log("%s 受「饥荒」影响：弃掉了全部 %d 张手牌。" % [p.name, n])
+		_end_turn()
+		return
 	# 出牌阶段结束钩子：结算所有 trigger=on_play_end 的状态效果
 	_trigger_on_play_end_statuses(p)
 	# 派克〖时钟悖论〗：出牌阶段内未使用过【普通攻击】→ 跳过弃牌阶段，获得 1 点伤害减免
@@ -1056,7 +1086,14 @@ func _resolve_played_card(p: PlayerData, card_index: int, card_id: String, card:
 			return
 		_start_plunder(current, target_idx, "card", false)
 		return
-	if card_id == "basic_attack":
+	# 『猎巫运动』：持续期间特殊攻击使用时无效，转化为【普通攻击】
+	if witch_hunt_owner >= 0 and card_type == "special_attack":
+		_log("『猎巫运动』生效：%s 的使用无效，转化为【普通攻击】。" % card_name)
+		p.attacks_used_this_turn += 1
+		if _has_skill(p, "skill_bloodline"):
+			_apply_bloodline(p)
+		_resolve_basic_attack(p, target_idx)
+	elif card_id == "basic_attack":
 		_resolve_basic_attack(p, target_idx)
 	else:
 		var ctx := {"card_id": card_id, "source_name": card_name, "instance": _card_instance_seq}
@@ -1652,6 +1689,64 @@ func _execute_action(src_idx: int, action: Dictionary, target_idx: int, ctx: Dic
 		"lose_hp":
 			# 失去生命：不受防御/装备影响，直接扣血（濒死窗口由流程收尾统一开启）
 			_lose_hp_direct(players[t], int(action.get("value", 1)), "失去生命")
+		"heal_low":
+			# 『急救箱』第二步：场上生命值 ≤ threshold 的玩家（含自己，按当前生命判定）回复 value 点
+			var threshold := int(action.get("threshold", 5))
+			var val := int(action.get("value", 3))
+			for pl in players:
+				if pl.dead or pl.hp > threshold:
+					continue
+				var old_h := pl.hp
+				_heal_with_saint(pl, val)
+				_log("%s 回复 %d 点生命（%d → %d）。" % [pl.name, pl.hp - old_h, old_h, pl.hp])
+		"discard_all_reserve":
+			# 『洪水泛滥』：弃置所有玩家预备区中的所有牌
+			for pl in players:
+				if pl.reserve.is_empty():
+					continue
+				var n := pl.reserve.size()
+				for cid in pl.reserve:
+					_to_discard(cid)
+				pl.reserve.clear()
+				pl.leap_reserve.clear()
+				_log("%s 预备区的 %d 张牌被弃置。" % [pl.name, n])
+		"cycle_hand":
+			# 『失而复得』：丢弃所有手牌，然后摸等量的牌
+			var pl := players[t]
+			var n := pl.hand.size()
+			for cid in pl.hand:
+				_to_discard(cid)
+				pl.own_turn_discards.append(cid)
+			pl.hand.clear()
+			_log("%s 弃置了全部 %d 张手牌。" % [pl.name, n])
+			if n > 0:
+				_draw_cards(pl, n)
+				_log("%s 摸了 %d 张牌。" % [pl.name, n])
+		"add_status_all":
+			# 全体存活玩家施加状态（『饥荒』『毕宿五的召唤』）
+			var sid := String(action.get("status_id", ""))
+			var dur := int(action.get("duration", -1))
+			var sname := String(db.get_status(sid).get("name", sid))
+			for pl in players:
+				if pl.dead:
+					continue
+				_add_status_capped(pl, sid, int(action.get("layers", 1)), dur)
+			_log("所有玩家获得%s。" % sname)
+		"lose_hp_all":
+			# 全体存活玩家失去生命（『毕宿五的召唤』）
+			var val := int(action.get("value", 1))
+			for pl in players:
+				if pl.dead:
+					continue
+				_lose_hp_direct(pl, val, String(ctx.get("source_name", "事件")))
+		"witch_hunt":
+			# 『猎巫运动』：持续至触发者下个回合开始，期间特殊攻击使用时转化为【普通攻击】
+			witch_hunt_owner = src_idx
+			_log("『猎巫运动』开始：接下来一回合内，所有特殊攻击使用时转化为【普通攻击】。")
+		"forsaken_choice":
+			# 『被遗弃者』：触发者二选一
+			_set_pending(PENDING_EVENT_CHOICE, {"options": ["path1", "path2"], "source": src_idx})
+			mode = Mode.SKILL_PICK
 		_:
 			push_warning("未实现的动作类型：" + type)
 
@@ -2541,6 +2636,7 @@ const SKILL_PICK_HANDLERS := {
 	PENDING_SCAB_EAT: "_pick_scab_eat",
 	PENDING_REORDER_OWN: "_pick_reorder_own",
 	PENDING_REORDER_HAND: "_pick_reorder_hand",
+	PENDING_EVENT_CHOICE: "_pick_event_choice",
 	"judge_prompt": "_pick_judge_prompt",
 }
 
@@ -3830,6 +3926,37 @@ func ui_confirm_event_show() -> void:
 		_run_actions(src, event.get("effects", []), src, ctx)
 	# 事件抽到即结算，不能留在伤害队列等待下一次出牌
 	_kick_damage()
+
+func _pick_event_choice(_p: PlayerData, _skill_id: String, token: String) -> void:
+	## 『被遗弃者』二选一结算（PENDING_EVENT_CHOICE）
+	var src := int(pending.get("source", current))
+	pending = {}
+	mode = Mode.PLAY
+	var p := players[src]
+	if token == "path1":
+		var lose := _ceil_pct(p.hp, 50)
+		_lose_hp_direct(p, lose, "『被遗弃者』")
+		if not p.equipment.is_empty():
+			var n := p.equipment.size()
+			for cid in p.equipment:
+				_to_discard(cid)
+			p.equipment.clear()
+			_log("%s 将装备区的 %d 张牌置入弃牌堆。" % [p.name, n])
+	else:
+		var nh := p.hand.size()
+		for cid in p.hand:
+			_to_discard(cid)
+			p.own_turn_discards.append(cid)
+		p.hand.clear()
+		var nr := p.reserve.size()
+		for cid in p.reserve:
+			_to_discard(cid)
+		p.reserve.clear()
+		p.leap_reserve.clear()
+		_log("%s 弃掉了全部 %d 张手牌与预备区的 %d 张牌。" % [p.name, nh, nr])
+	if _ensure_dying_window():
+		return
+	_run_deferred_prompts()
 
 # ---------------- 弃牌阶段 ----------------
 

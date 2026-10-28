@@ -1,31 +1,18 @@
 {
   "event_deck": [
-	"event_draw_all",
-	"event_heal_2",
-	"event_random_discard",
-	"event_dice_fate",
-    "event_thunder"
+	"event_thunder",
+	"event_first_aid",
+	"event_flood",
+	"event_recover",
+	"event_famine",
+	"event_witch_hunt",
+	"event_forsaken",
+	"event_relief",
+	"event_hastur"
   ],
   "events": [
 	{
-	  "description": "全体摸1张牌。",
-	  "effects": [
-		{
-		  "actions": [
-			{
-			  "type": "draw_all",
-			  "value": 1
-			}
-		  ],
-		  "trigger": "on_resolve"
-		}
-	  ],
-	  "id": "event_draw_all",
-	  "name": "『全员补给』",
-	  "target_type": "none"
-	},
-	{
-	  "description": "令场上所有玩家\n失去5点生命。",
+	  "description": "场上所有玩家失去 5 点生命。",
 	  "effects": [
 		{
 		  "actions": [
@@ -44,70 +31,150 @@
 	  "target_type": "all_players"
 	},
 	{
-	  "description": "自己回复2点生命\n（不超过上限）。",
+	  "description": "回复5点生命，然后使场上生命值≤5的玩家回复3点生命。",
 	  "effects": [
 		{
 		  "actions": [
 			{
 			  "target": "self",
 			  "type": "heal",
-			  "value": 2
-			}
-		  ],
-		  "trigger": "on_resolve"
-		}
-	  ],
-	  "id": "event_heal_2",
-	  "name": "『一息尚存』",
-	  "target_type": "self"
-	},
-	{
-	  "description": "随机弃置目标\n3张手牌。",
-	  "effects": [
-		{
-		  "actions": [
+			  "value": 5
+			},
 			{
-			  "target": "selected",
-			  "type": "random_discard",
+			  "threshold": 5,
+			  "type": "heal_low",
 			  "value": 3
 			}
 		  ],
 		  "trigger": "on_resolve"
 		}
 	  ],
-	  "id": "event_random_discard",
-	  "name": "『趁火打劫』",
-	  "target_type": "single_enemy"
+	  "id": "event_first_aid",
+	  "name": "『急救箱』",
+	  "target_type": "self"
 	},
 	{
-	  "description": "骰子判定：1-2 失去2点生命；\n3-6 摸2张牌。",
-	  "effects": [],
-	  "id": "event_dice_fate",
-	  "judge": {
-		"fail_actions": [
-		  {
-			"damage_type": "hp_loss",
-			"target": "self",
-			"type": "deal_damage",
-			"value": 2
-		  }
-		],
-		"method": "dice",
-		"success_actions": [
-		  {
-			"target": "self",
-			"type": "draw_cards",
-			"value": 2
-		  }
-		],
-		"success_values": [
-		  3,
-		  4,
-		  5,
-		  6
-		]
-	  },
-	  "name": "『命运骰』",
+	  "description": "弃置场上所有玩家预备区中的所有牌。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "type": "discard_all_reserve"
+			}
+		  ],
+		  "trigger": "on_resolve"
+		}
+	  ],
+	  "id": "event_flood",
+	  "name": "『洪水泛滥』",
+	  "target_type": "none"
+	},
+	{
+	  "description": "丢弃当前所有手牌，然后摸等量的牌。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "target": "self",
+			  "type": "cycle_hand"
+			}
+		  ],
+		  "trigger": "on_resolve"
+		}
+	  ],
+	  "id": "event_recover",
+	  "name": "『失而复得』",
+	  "target_type": "none"
+	},
+	{
+	  "description": "所有玩家（包括你自己）下回合开始时不能抽牌，并需要在回合结束时弃掉所有手牌。\n\n*“岁大饥，人相食。”而在二十二世纪，数量庞大的素食主义者们使植物人供不应求。*",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "duration": 2,
+			  "layers": 1,
+			  "status_id": "famine",
+			  "type": "add_status_all"
+			}
+		  ],
+		  "trigger": "on_resolve"
+		}
+	  ],
+	  "id": "event_famine",
+	  "name": "『饥荒』",
+	  "target_type": "none"
+	},
+	{
+	  "description": "接下来一回合内，场上所有特殊攻击均无效，并在使用时转化为【普通攻击】。\n\n*据报道，本意是“重温中世纪历史”的仿“猎巫”主题活动受到多个女巫协会与神秘学家联合团体的控诉与游行抗议。*",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "type": "witch_hunt"
+			}
+		  ],
+		  "trigger": "on_resolve"
+		}
+	  ],
+	  "id": "event_witch_hunt",
+	  "name": "『猎巫运动』",
+	  "target_type": "none"
+	},
+	{
+	  "description": "你选择一项：\n1、失去当前50%（向上取整）生命，并将装备区内的所有牌置入弃牌堆；\n2、弃掉所有手牌，并将预备区中的所有牌置入弃牌堆。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "type": "forsaken_choice"
+			}
+		  ],
+		  "trigger": "on_resolve"
+		}
+	  ],
+	  "id": "event_forsaken",
+	  "name": "『被遗弃者』",
+	  "target_type": "none"
+	},
+	{
+	  "description": "场上所有玩家摸2张牌。",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "type": "draw_all",
+			  "value": 2
+			}
+		  ],
+		  "trigger": "on_resolve"
+		}
+	  ],
+	  "id": "event_relief",
+	  "name": "『救济粮』",
+	  "target_type": "none"
+	},
+	{
+	  "description": "场上所有玩家立刻失去1点生命并被赋予「黄印」。\n「黄印」：出牌阶段开始时，失去2点生命，永久持续。\n\n*卡尔克萨的黄衣之王……*",
+	  "effects": [
+		{
+		  "actions": [
+			{
+			  "type": "lose_hp_all",
+			  "value": 1
+			},
+			{
+			  "duration": -1,
+			  "layers": 1,
+			  "status_id": "yellow_sign",
+			  "type": "add_status_all"
+			}
+		  ],
+		  "trigger": "on_resolve"
+		}
+	  ],
+	  "id": "event_hastur",
+	  "name": "『毕宿五的召唤』",
 	  "target_type": "none"
 	}
   ]

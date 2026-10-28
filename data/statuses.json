@@ -1,6 +1,22 @@
 {
   "statuses": [
     {
+      "description": "下回合开始时不能摸牌，并需要在回合结束时弃掉所有手牌。",
+      "duration": 1,
+      "effects": [],
+      "id": "famine",
+      "name": "「饥荒」",
+      "trigger": "none"
+    },
+    {
+      "description": "出牌阶段开始时，失去2点生命。（永久持续）",
+      "duration": -1,
+      "effects": [],
+      "id": "yellow_sign",
+      "name": "「黄印」",
+      "trigger": "none"
+    },
+    {
       "description": "接下来两个回合开始时失去2点生命。",
       "duration": 2,
       "effects": [

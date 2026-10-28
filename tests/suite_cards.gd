@@ -20,7 +20,7 @@ func run(t) -> void:
 
 	# 其他数据表可正常加载
 	t.check(not db.get_skill("skill_fractal").is_empty(), "技能〖分形几何〗可加载")
-	t.check(not db.get_event("event_heal_2").is_empty(), "事件『一息尚存』可加载")
+	t.check(not db.get_event("event_first_aid").is_empty(), "事件『急救箱』可加载")
 	t.check(not db.get_attribute("time").is_empty(), "属性〈时间〉可加载")
 	t.check(not db.get_character("char_wuling").is_empty(), "角色伍灵可加载")
 	t.check_eq(db.get_character("char_wuling").get("skill_ids", []), ["skill_perceive"], "角色技能列表正确")

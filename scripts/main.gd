@@ -178,12 +178,12 @@ var discard_pick_box: VBoxContainer
 var game_over_layer: Control
 var game_over_label: Label
 var event_show_layer: Control
-var event_show_label: Label
+var event_show_label: RichTextLabel
 var event_bar: VBoxContainer             # 侧栏「战场事件」列表
 var _status_expand: Dictionary = {}      # 玩家下标 -> 状态栏是否展开（默认收起）
 var info_popup: Control
 var info_popup_title: Label
-var info_popup_desc: Label
+var info_popup_desc: RichTextLabel
 var _root_margin: MarginContainer
 
 var highlight_sb: StyleBoxFlat
@@ -503,10 +503,14 @@ func _build_ui() -> void:
 	# 事件说明窗口
 	var ov4 := _make_overlay()
 	event_show_layer = ov4["layer"]
-	event_show_label = Label.new()
-	event_show_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	event_show_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	event_show_label.add_theme_font_size_override("font_size", UITheme.fs(18))
+	var ev_label := RichTextLabel.new()
+	ev_label.bbcode_enabled = true
+	ev_label.fit_content = true
+	ev_label.scroll_active = false
+	ev_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ev_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ev_label.add_theme_font_size_override("normal_font_size", UITheme.fs(18))
+	event_show_label = ev_label
 	ov4["box"].add_child(event_show_label)
 	var ebtn := Button.new()
 	ebtn.text = "确认"
@@ -523,9 +527,13 @@ func _build_ui() -> void:
 	info_popup_title.add_theme_font_size_override("font_size", UITheme.fs(20))
 	info_popup_title.add_theme_color_override("font_color", UITheme.ACCENT)
 	ov5["box"].add_child(info_popup_title)
-	info_popup_desc = Label.new()
-	info_popup_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info_popup_desc.add_theme_font_size_override("font_size", UITheme.fs(14))
+	var info_desc := RichTextLabel.new()
+	info_desc.bbcode_enabled = true
+	info_desc.fit_content = true
+	info_desc.scroll_active = false
+	info_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info_desc.add_theme_font_size_override("normal_font_size", UITheme.fs(14))
+	info_popup_desc = info_desc
 	ov5["box"].add_child(info_popup_desc)
 	var cbtn := Button.new()
 	cbtn.text = "关闭"
@@ -1105,7 +1113,7 @@ func _refresh() -> void:
 	event_show_layer.visible = (g.mode == AtlasGame.Mode.EVENT_SHOW)
 	if event_show_layer.visible:
 		var event := g.db.get_event(String(g.pending.get("event_id", "")))
-		event_show_label.text = "%s\n\n%s" % [String(event.get("name", "")), String(event.get("description", ""))]
+		event_show_label.text = _bbcode("%s\n\n%s" % [String(event.get("name", "")), String(event.get("description", ""))])
 	game_over_layer.visible = (g.mode == AtlasGame.Mode.GAME_OVER)
 	if game_over_layer.visible:
 		var team_name := g.winner_team_name
@@ -1239,6 +1247,8 @@ func _rebuild_skill_pick() -> void:
 		title.text = "是否发动限定技〖放逐〗？"
 	elif kind == AtlasGame.PENDING_SCAB_EAT:
 		title.text = "〖食痂〗：是否清空所有「痂」回复等量生命？"
+	elif kind == AtlasGame.PENDING_EVENT_CHOICE:
+		title.text = "『被遗弃者』：你选择一项"
 	elif kind == AtlasGame.PENDING_REORDER_OWN:
 		title.text = "〖调序〗：选择你的一张牌弃置"
 	elif kind == AtlasGame.PENDING_REORDER_HAND:
@@ -1342,6 +1352,12 @@ func _rebuild_skill_pick() -> void:
 		elif kind == AtlasGame.PENDING_SCAB_EAT:
 			label = "清空「痂」并回复等量生命" if token == "yes" else "保留「痂」"
 			card = {}
+		elif kind == AtlasGame.PENDING_EVENT_CHOICE:
+			if token == "path1":
+				label = "失去当前50%（向上取整）生命，弃掉装备区所有牌"
+			else:
+				label = "弃掉所有手牌，并弃掉预备区所有牌"
+			card = {}
 		elif kind == AtlasGame.PENDING_LEAP_TRANSITION:
 			label = "摸 %s 张扣置预备区（失去 %d 点生命）" % [token, int(token) * 2]
 			card = {}
@@ -1403,7 +1419,7 @@ func _rebuild_skill_pick() -> void:
 	# 掠夺/开膛手询问（含明确「放弃」项）及溯形态强制询问不显示取消按钮
 	var hide_cancel := kind == AtlasGame.PENDING_PLUNDER or kind == AtlasGame.PENDING_RIPPER_ASK \
 		or kind == AtlasGame.PENDING_SHACKLE_ASK or kind == AtlasGame.PENDING_EXILE_RT_ASK \
-		or kind == AtlasGame.PENDING_SCAB_EAT
+		or kind == AtlasGame.PENDING_SCAB_EAT or kind == AtlasGame.PENDING_EVENT_CHOICE
 	if not hide_cancel:
 		var cancel := Button.new()
 		cancel.text = "取消"
@@ -1609,9 +1625,26 @@ func _on_event_show_confirm() -> void:
 	game.ui_confirm_event_show()
 	_refresh()
 
+## 数据中的 *...* 装饰文本（事件的氛围描述）转 BBCode 斜体
+func _bbcode(text: String) -> String:
+	var out := ""
+	var rest := text
+	while true:
+		var a := rest.find("*")
+		if a < 0:
+			out += rest
+			break
+		var b := rest.find("*", a + 1)
+		if b < 0:
+			out += rest
+			break
+		out += rest.substr(0, a) + "[i]" + rest.substr(a + 1, b - a - 1) + "[/i]"
+		rest = rest.substr(b + 1)
+	return out
+
 func _show_info(title: String, desc: String) -> void:
 	info_popup_title.text = title
-	info_popup_desc.text = desc
+	info_popup_desc.text = _bbcode(desc)
 	info_popup.visible = true
 
 # 玩家面板富文本词条点击：状态 / 痂 / 濒死 / 死亡 / 预备区卡牌
