@@ -125,10 +125,12 @@ static func make_theme(font_size: int = 16) -> Theme:
 	th.default_font = sys
 	th.default_font_size = font_size
 	# 伪斜体：中文字体没有斜体变体，BBCode [i] 默认无效；
-	# 用 FontVariation 的剪切变换合成斜体，供 RichTextLabel 的 [i]/[bi] 使用
+	# 改用楷体系字体 + 轻微剪切倾斜，模拟 markdown 渲染的中文斜体样式
+	var kai := SystemFont.new()
+	kai.font_names = PackedStringArray(["KaiTi", "STKaiti", "Kaiti SC", "serif"])
 	var italic := FontVariation.new()
-	italic.base_font = sys
-	italic.variation_transform = Transform2D(Vector2(1, 0), Vector2(0.22, 1), Vector2.ZERO)
+	italic.base_font = kai
+	italic.variation_transform = Transform2D(Vector2(1, 0), Vector2(0.12, 1), Vector2.ZERO)
 	th.set_font("italics_font", "RichTextLabel", italic)
 	th.set_font("bold_italics_font", "RichTextLabel", italic)
 
