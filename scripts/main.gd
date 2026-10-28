@@ -731,6 +731,8 @@ func _refresh() -> void:
 				name_line = "%s　[lb]%s[rb]" % [p.name, tname]
 		var bb := "[center][b][font_size=%d]%s[/font_size][/b][/center]\n" % [UITheme.fs(16) if compact else UITheme.fs(18), name_line]
 		bb += "[center][color=lightgray]生命 %d / %d　手牌 %d[/color][/center]\n" % [p.hp, p.max_hp, p.hand.size()]
+		if p.shield > 0:
+			bb += "[center][color=cyan]护盾 %d[/color][/center]\n" % p.shield
 		var st_parts: Array[String] = []
 		for s in p.status_ids():
 			var n := p.status_layer(s)
@@ -1072,6 +1074,10 @@ func _refresh() -> void:
 			if sid == "skill_sand_burial" and not cur.star_brilliance_awakened:
 				b.disabled = true
 				b.text = "%s（未觉醒）" % String(sk.get("name", sid))
+			# 狄斯托利〔毁灭当量〕：未觉醒〔我即武器〕时置灰不可用
+			if sid == "skill_destroy" and not cur.weapon_awakened:
+				b.disabled = true
+				b.text = "%s（未觉醒）" % String(sk.get("name", sid))
 			if is_mobile():
 				# 移动端无悬停，说明靠长按弹出；tooltip 留着只会在桌面生效
 				b.tooltip_text = ""
@@ -1247,6 +1253,12 @@ func _rebuild_skill_pick() -> void:
 		title.text = "是否发动限定技〖放逐〗？"
 	elif kind == AtlasGame.PENDING_SCAB_EAT:
 		title.text = "〖食痂〗：是否清空所有「痂」回复等量生命？"
+	elif kind == AtlasGame.PENDING_BOOST_DISCARD:
+		title.text = "〔增压〕：选择一张手牌弃置"
+	elif kind == AtlasGame.PENDING_TRUTH_DISCARD:
+		title.text = "〔我即真理〕：选择一张手牌弃置"
+	elif kind == AtlasGame.PENDING_WEAPON_ASK:
+		title.text = "〔我即武器〕：是否弃掉所有手牌，将「烈性炸药」转化为「高爆炸药」？"
 	elif kind == AtlasGame.PENDING_EVENT_CHOICE:
 		title.text = "『被遗弃者』：你选择一项"
 	elif kind == AtlasGame.PENDING_REORDER_OWN:
@@ -1352,6 +1364,9 @@ func _rebuild_skill_pick() -> void:
 		elif kind == AtlasGame.PENDING_SCAB_EAT:
 			label = "清空「痂」并回复等量生命" if token == "yes" else "保留「痂」"
 			card = {}
+		elif kind == AtlasGame.PENDING_WEAPON_ASK:
+			label = "弃掉所有手牌并转化为「高爆炸药」" if token == "yes" else "暂不转化"
+			card = {}
 		elif kind == AtlasGame.PENDING_EVENT_CHOICE:
 			if token == "path1":
 				label = "失去当前50%（向上取整）生命，弃掉装备区所有牌"
@@ -1419,7 +1434,8 @@ func _rebuild_skill_pick() -> void:
 	# 掠夺/开膛手询问（含明确「放弃」项）及溯形态强制询问不显示取消按钮
 	var hide_cancel := kind == AtlasGame.PENDING_PLUNDER or kind == AtlasGame.PENDING_RIPPER_ASK \
 		or kind == AtlasGame.PENDING_SHACKLE_ASK or kind == AtlasGame.PENDING_EXILE_RT_ASK \
-		or kind == AtlasGame.PENDING_SCAB_EAT or kind == AtlasGame.PENDING_EVENT_CHOICE
+		or kind == AtlasGame.PENDING_SCAB_EAT or kind == AtlasGame.PENDING_EVENT_CHOICE \
+		or kind == AtlasGame.PENDING_WEAPON_ASK
 	if not hide_cancel:
 		var cancel := Button.new()
 		cancel.text = "取消"

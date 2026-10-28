@@ -51,6 +51,8 @@ var attack_minus_this_turn: int = 0    # 溯〖守御〗减益：本回合内使
 var guardian_rt_used: bool = false     # 溯〖守御〗本回合是否已触发（每名其他玩家的回合限一次，每回合重置）
 var leap_reserve: Array[String] = []   # 溯〖跃迁〗扣置于预备区的牌（可当作手牌打出）
 var own_turn_discards: Array[String] = []  # 本回合内自己弃掉的牌（溯〖嬉闹〗可选范围）
+var shield: int = 0                    # 护盾量：存在时抵挡相当于护盾量的伤害（不挡生命流失），持续无限、可叠加
+var weapon_awakened: bool = false      # 狄斯托利〔我即武器〕是否已觉醒（解锁〔毁灭当量〕）
 
 func has_status(id: String) -> bool:
 	return statuses.has(id)

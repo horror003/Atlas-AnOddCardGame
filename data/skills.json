@@ -641,6 +641,95 @@
       "name": "〖千载幽咽〗",
       "skill_type": "limited",
       "target_type": "single_enemy"
+    },
+    {
+      "description": "开场技。获得「进气」与2点护盾。",
+      "effects": [
+        {
+          "actions": [
+            {
+              "layers": 1,
+              "status_id": "intake",
+              "target": "self",
+              "type": "add_status"
+            },
+            {
+              "target": "self",
+              "type": "gain_shield",
+              "value": 2
+            }
+          ],
+          "trigger": "on_game_start"
+        }
+      ],
+      "id": "skill_pump",
+      "max_uses_per_turn": 0,
+      "name": "〔启泵〕",
+      "skill_type": "opening",
+      "target_type": "none"
+    },
+    {
+      "description": "锁定技。判定阶段开始时，若你携带「进气」，则切换为「排气」并获得一层「兴奋」。若你携带「排气」，则切换为「进气」并获得2点护盾。\n「兴奋」：造成伤害提升100%，然后减少一层。",
+      "effects": [],
+      "id": "skill_gas_exchange",
+      "max_uses_per_turn": 0,
+      "name": "〔气体交换〕",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "出牌阶段限一次。你可以弃掉一张手牌来额外触发一次〔气体交换〕的状态切换并触发对应效果。若本次切换为「进气」，则额外为我方全体提供2点护盾；若本次切换为「排气」，则摸一张牌。",
+      "effects": [],
+      "id": "skill_boost",
+      "max_uses_per_turn": 1,
+      "name": "〔增压〕",
+      "skill_type": "active",
+      "target_type": "none"
+    },
+    {
+      "description": "出牌阶段限两次。你可以弃掉一张手牌并获得一层「烈性炸药」。\n「烈性炸药」：使用【普通攻击】时，额外造成1点物理伤害，然后减少一层。",
+      "effects": [],
+      "id": "skill_truth",
+      "max_uses_per_turn": 2,
+      "name": "〔我即真理〕",
+      "skill_type": "active",
+      "target_type": "none"
+    },
+    {
+      "description": "觉醒技。出牌阶段开始时，若你携带≥5层「烈性炸药」，则你可以弃掉所有手牌，将携带的所有「烈性炸药」转化为等量层数的「高爆炸药」，并解锁〔毁灭当量〕。\n「高爆炸药」：计数状态。",
+      "effects": [],
+      "id": "skill_weapon",
+      "max_uses_per_turn": 0,
+      "name": "〔我即武器〕",
+      "skill_type": "awakening",
+      "target_type": "none"
+    },
+    {
+      "description": "需觉醒〔我即武器〕后解锁。限定技。出牌阶段，你可以选择一名其他玩家，对其造成5点灵魂伤害，并额外造成X+2Y点物理伤害（X相当于你所携带的「烈性炸药」层数，Y相当于你所携带的「高爆炸药」层数）。然后，你清空自身携带的所有「烈性炸药」与「高爆炸药」。",
+      "effects": [],
+      "id": "skill_destroy",
+      "max_uses_per_turn": 0,
+      "name": "〔毁灭当量〕",
+      "skill_type": "limited",
+      "target_type": "single_enemy"
+    },
+    {
+      "description": "锁定技。你的【普通攻击】在对目标造成伤害后会施加一层「毒素」。\n「毒素」：出牌阶段开始时失去1点生命，每次至多失去3点，持续一回合。",
+      "effects": [],
+      "id": "skill_neuro",
+      "max_uses_per_turn": 0,
+      "name": "〔神经疗法〕",
+      "skill_type": "locked",
+      "target_type": "none"
+    },
+    {
+      "description": "锁定技。你对带有「毒素」的敌人造成伤害时会额外附带一次其「毒素」层数/2（向上取整）的魔法伤害。",
+      "effects": [],
+      "id": "skill_antidote",
+      "max_uses_per_turn": 0,
+      "name": "〔以毒攻毒〕",
+      "skill_type": "locked",
+      "target_type": "none"
     }
   ]
 }

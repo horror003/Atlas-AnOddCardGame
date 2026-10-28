@@ -354,6 +354,24 @@
 											 "skill_open_coffin",
 											 "skill_millennium"
 										 ]
+					   },
+					   {
+						   "attribute_ids":  ["life", "gloom"],
+						   "draw_limit": 5, "hand_limit": 3, "max_hp": 20,
+						   "id": "char_pm10", "name": "PM10", "pool": "retrace",
+						   "skill_ids": ["skill_pump", "skill_gas_exchange", "skill_boost"]
+					   },
+					   {
+						   "attribute_ids":  ["particle", "space"],
+						   "draw_limit": 5, "hand_limit": 3, "max_hp": 20,
+						   "id": "char_distori", "name": "狄斯托利", "pool": "retrace",
+						   "skill_ids": ["skill_truth", "skill_weapon", "skill_destroy"]
+					   },
+					   {
+						   "attribute_ids":  ["delusion", "chaos"],
+						   "draw_limit": 5, "hand_limit": 3, "max_hp": 20,
+						   "id": "char_kalixi", "name": "卡丽茜", "pool": "retrace",
+						   "skill_ids": ["skill_neuro", "skill_antidote"]
 					   }
 				   ]
 }

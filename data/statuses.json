@@ -167,6 +167,58 @@
       "max_layers": 9,
       "name": "「窥探」",
       "trigger": "none"
+    },
+    {
+      "description": "〔气体交换〕形态：判定阶段开始时切换为「排气」并获得一层「兴奋」。",
+      "duration": -1,
+      "effects": [],
+      "id": "intake",
+      "name": "「进气」",
+      "trigger": "none"
+    },
+    {
+      "description": "〔气体交换〕形态：判定阶段开始时切换为「进气」并获得2点护盾。",
+      "duration": -1,
+      "effects": [],
+      "id": "exhaust",
+      "name": "「排气」",
+      "trigger": "none"
+    },
+    {
+      "description": "你造成的伤害提升100%，然后减少一层。（永久持续，层数耗尽后移除）",
+      "duration": -1,
+      "effects": [],
+      "id": "excitement",
+      "max_layers": 9,
+      "name": "「兴奋」",
+      "trigger": "none"
+    },
+    {
+      "description": "使用【普通攻击】时，额外造成1点物理伤害，然后减少一层。（永久持续，层数耗尽后移除）",
+      "duration": -1,
+      "effects": [],
+      "id": "explosive",
+      "max_layers": 9,
+      "name": "「烈性炸药」",
+      "trigger": "none"
+    },
+    {
+      "description": "计数状态。（永久持续）",
+      "duration": -1,
+      "effects": [],
+      "id": "high_explosive",
+      "max_layers": 9,
+      "name": "「高爆炸药」",
+      "trigger": "none"
+    },
+    {
+      "description": "出牌阶段开始时失去相当于层数的生命（每次至多失去3点），触发后清空。持续一回合。",
+      "duration": 2,
+      "effects": [],
+      "id": "toxin",
+      "max_layers": 9,
+      "name": "「毒素」",
+      "trigger": "none"
     }
   ]
 }

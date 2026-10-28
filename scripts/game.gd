@@ -64,6 +64,11 @@ const PENDING_REORDER_OWN := "reorder_own"        # 溯〖调序〗：选自己�
 const PENDING_REORDER_TARGET := "reorder_target"  # 溯〖调序〗：选场上任意玩家
 const PENDING_REORDER_HAND := "reorder_hand"      # 溯〖调序〗：盲选其一张手牌
 const PENDING_EVENT_CHOICE := "event_choice"      # 『被遗弃者』：二选一
+# ---- 溯洄之境·新角色（PM10 / 狄斯托利 / 卡丽茜） ----
+const PENDING_BOOST_DISCARD := "boost_discard"    # PM10〔增压〕：选一张手牌弃置
+const PENDING_TRUTH_DISCARD := "truth_discard"    # 狄斯托利〔我即真理〕：选一张手牌弃置
+const PENDING_WEAPON_ASK := "weapon_ask"          # 狄斯托利〔我即武器〕：询问是否觉醒转化
+const PENDING_DESTROY_TARGET := "destroy_target"  # 狄斯托利〔毁灭当量〕：选目标
 
 const PENDING_KINDS := [
 	PENDING_CARD, PENDING_EVENT, PENDING_EVENT_SHOW, PENDING_SKILL,
@@ -80,7 +85,8 @@ const PENDING_KINDS := [
 	PENDING_SHACKLE_ASK, PENDING_FROLIC_CARD, PENDING_FROLIC_TARGET,
 	PENDING_LEAP_TRANSITION, PENDING_EXILE_RT_ASK, PENDING_EXILE_RT_TARGET,
 	PENDING_SCAB_EAT, PENDING_REORDER_OWN, PENDING_REORDER_TARGET, PENDING_REORDER_HAND,
-	PENDING_EVENT_CHOICE,
+	PENDING_EVENT_CHOICE, PENDING_BOOST_DISCARD, PENDING_TRUTH_DISCARD,
+	PENDING_WEAPON_ASK, PENDING_DESTROY_TARGET,
 	"judge_prompt",
 ]
 
@@ -428,6 +434,9 @@ func ui_confirm_interstitial() -> void:
 	var p := players[current]
 	# 判定阶段（规则 4.2-1）：结算自己预备区中的延时判定牌
 	phase = Phase.JUDGE
+	# PM10〔气体交换〕：判定阶段开始时切换「进气」/「排气」并触发对应效果
+	if _has_skill(p, "skill_gas_exchange"):
+		_gas_exchange(p)
 	_run_judge_phase(p)
 	if mode == Mode.GAME_OVER:
 		return
@@ -661,6 +670,13 @@ func _enter_play_phase(p: PlayerData) -> void:
 		_lose_hp_direct(p, 2, "「黄印」")
 		if _ensure_dying_window():
 			return
+	# 「毒素」：出牌阶段开始时失去相当于层数的生命（每次至多 3 点），触发后清空
+	if p.has_status("toxin"):
+		var t_lose := mini(p.status_layer("toxin"), 3)
+		p.remove_status("toxin")
+		_lose_hp_direct(p, t_lose, "「毒素」")
+		if _ensure_dying_window():
+			return
 	# 溯〖黎明〗觉醒：生命 ≥20 → 失去 8 点生命，生命上限改写为 100，获得〖信仰之跃〗
 	if _has_skill(p, "skill_dawn") and not p.dawn_awakened and p.hp >= 20:
 		p.dawn_awakened = true
@@ -682,6 +698,12 @@ func _enter_play_phase(p: PlayerData) -> void:
 			p.skill_ids.append("skill_scab_eat")
 		_log("%s 触发〖蚀痕〗觉醒！清空 %d 层「痂」，回复 %d 点生命（%d → %d），〖结痂〗进化并获得〖食痂〗。" % [p.name, scab_all, p.hp - old_hp_e, old_hp_e, p.hp])
 		_refresh_limits(p)
+	# 狄斯托利〔我即武器〕觉醒：出牌阶段开始时若携带 ≥5 层「烈性炸药」，可弃掉所有手牌转化为等量「高爆炸药」并解锁〔毁灭当量〕
+	if _has_skill(p, "skill_weapon") and not p.weapon_awakened and p.status_layer("explosive") >= 5:
+		_set_pending(PENDING_WEAPON_ASK, {"options": ["yes", "no"]})
+		mode = Mode.SKILL_PICK
+		_log("〔我即武器〕：是否弃掉所有手牌，将 %d 层「烈性炸药」转化为等量「高爆炸药」并解锁〔毁灭当量〕？" % p.status_layer("explosive"))
+		return
 	# 溯〖困兽〗：出牌阶段开始时获得 2 层「镣铐」（至多 4 层）
 	if _has_skill(p, "skill_caged_beast_retrace"):
 		var got := _add_status_capped(p, "shackle", 2, -1)
@@ -1142,6 +1164,11 @@ func _resolve_basic_attack(p: PlayerData, target_idx: int) -> void:
 		_log("%s 触发〖扬沙〗：【普通攻击】改为 2×%d 点物理伤害。" % [p.name, dmg_val])
 	else:
 		_run_actions(current, db.get_card("basic_attack").get("effects", []), target_idx, ctx)
+	# 「烈性炸药」：使用【普通攻击】时额外造成 1 点物理伤害，然后减少一层
+	if p.status_layer("explosive") > 0:
+		p.consume_layer("explosive")
+		_deal_damage(current, target_idx, 1, "physical", "「烈性炸药」")
+		_log("%s 的「烈性炸药」引爆：额外造成 1 点物理伤害（剩余 %d 层）。" % [p.name, p.status_layer("explosive")])
 	# 〖光明之眼〗：每回合第一张普攻 → 目标失明
 	if _has_skill(p, "skill_light_eye") and p.attacks_used_this_turn == 1:
 		var c := _add_status_capped(target, "blind", 1, -1)
@@ -1288,6 +1315,24 @@ func ui_select_target(target_idx: int) -> void:
 				p.consume_layer("crimson")
 			_log("并移除 %d 层「猩红」，追加 %d 点灵魂伤害。" % [y, y])
 			_deal_damage(src, target_idx, y, "soul", "〖相生相灭〗")
+		_kick_damage()
+	elif kind == PENDING_DESTROY_TARGET:
+		# 狄斯托利〔毁灭当量〕：5 点灵魂伤害 + X+2Y 点物理伤害（X=「烈性炸药」层数，Y=「高爆炸药」层数），然后清空两者
+		var src_d := int(pending["source"])
+		var sp_d := players[src_d]
+		var x_layers := sp_d.status_layer("explosive")
+		var y_layers := sp_d.status_layer("high_explosive")
+		pending = {}
+		mode = Mode.PLAY
+		sp_d.limited_used["skill_destroy"] = true
+		_log("%s 发动〔毁灭当量〕，目标：%s。" % [sp_d.name, players[target_idx].name])
+		_deal_damage(src_d, target_idx, 5, "soul", "〔毁灭当量〕")
+		var extra_d := x_layers + 2 * y_layers
+		if extra_d > 0:
+			_deal_damage(src_d, target_idx, extra_d, "physical", "〔毁灭当量〕")
+		sp_d.remove_status("explosive")
+		sp_d.remove_status("high_explosive")
+		_log("〔毁灭当量〕额外造成 %d 点物理伤害（烈性炸药 %d 层 + 高爆炸药 %d 层×2），随后清空所有炸药。" % [extra_d, x_layers, y_layers])
 		_kick_damage()
 	elif kind == PENDING_EXILE_TARGET:
 		var src := int(pending["source"])
@@ -1689,6 +1734,11 @@ func _execute_action(src_idx: int, action: Dictionary, target_idx: int, ctx: Dic
 		"lose_hp":
 			# 失去生命：不受防御/装备影响，直接扣血（濒死窗口由流程收尾统一开启）
 			_lose_hp_direct(players[t], int(action.get("value", 1)), "失去生命")
+		"gain_shield":
+			# 获得护盾：持续无限、可叠加
+			var sp := players[t]
+			sp.shield += int(action.get("value", 1))
+			_log("%s 获得 %d 点护盾（现有 %d 点）。" % [sp.name, int(action.get("value", 1)), sp.shield])
 		"heal_low":
 			# 『急救箱』第二步：场上生命值 ≤ threshold 的玩家（含自己，按当前生命判定）回复 value 点
 			var threshold := int(action.get("threshold", 5))
@@ -1806,6 +1856,11 @@ func _deal_damage(src_idx: int, target_idx: int, base_amount: int, damage_type: 
 	# 3. 乘算
 	if not is_equal_approx(multiplier, 1.0):
 		amount = int(floor(float(amount) * multiplier))
+	# 「兴奋」：造成伤害提升100%，然后减少一层
+	if amount > 0 and src.has_status("excitement"):
+		src.consume_layer("excitement")
+		amount *= 2
+		_log("%s 的「兴奋」生效：本次伤害提升100%%（剩余 %d 层）。" % [src.name, src.status_layer("excitement")])
 	amount = maxi(0, amount)
 	damage_queue.append({
 		"source": src_idx,
@@ -2137,6 +2192,12 @@ func _settle_damage(d: Dictionary, blocked: int) -> void:
 		var reduced := mini(dmg, defender.damage_reduction)
 		dmg -= reduced
 		_log("%s 的伤害减免生效：本次%s伤害 -%d。" % [defender.name, type_name, reduced])
+	# 护盾：抵挡相当于护盾量的伤害（先算伤害减免再扣护盾），无法抵挡生命流失
+	if dtype != "hp_loss" and dmg > 0 and defender.shield > 0:
+		var absorbed := mini(dmg, defender.shield)
+		defender.shield -= absorbed
+		dmg -= absorbed
+		_log("%s 的护盾抵挡 %d 点伤害（剩余护盾 %d）。" % [defender.name, absorbed, defender.shield])
 	if dmg > 0:
 		defender.hp -= dmg
 		if dtype == "hp_loss":
@@ -2181,6 +2242,27 @@ func _settle_damage(d: Dictionary, blocked: int) -> void:
 				var c4 := _add_status_capped(src_p, "stop_sword", 1, -1)
 				if c4 > 0:
 					_log("%s 触发〖止戈〗：%s 获得一层「止戈」（%d 层）。" % [defender.name, src_p.name, src_p.status_layer("stop_sword")])
+			# 卡丽茜〔以毒攻毒〕：对带「毒素」的敌人造成伤害时，额外附带 ceil(层数/2) 点法术伤害（附加伤害不再连锁触发）
+			# 注意须先于〔神经疗法〕判定：本段伤害结算时目标携带的「毒素」才算数
+			if _has_skill(src_p, "skill_antidote") and not bool(d.get("antidote_proc", false)) and defender.status_layer("toxin") > 0:
+				var anti_extra := int(ceil(float(defender.status_layer("toxin")) / 2.0))
+				if anti_extra > 0:
+					damage_queue.append({
+						"source": int(d["source"]),
+						"defender": int(d["defender"]),
+						"amount": anti_extra,
+						"damage_type": "magical",
+						"source_name": "〔以毒攻毒〕",
+						"card_id": "",
+						"card_type": "",
+						"instance": -1,
+						"antidote_proc": true,
+					})
+					_log("%s 触发〔以毒攻毒〕：额外附带 %d 点法术伤害。" % [src_p.name, anti_extra])
+			# 卡丽茜〔神经疗法〕：【普通攻击】对目标造成伤害后施加一层「毒素」
+			if _has_skill(src_p, "skill_neuro") and String(d.get("card_id", "")) == "basic_attack":
+				_add_status_capped(defender, "toxin", 1, 2)
+				_log("%s 触发〔神经疗法〕：%s 获得一层「毒素」（共 %d 层）。" % [src_p.name, defender.name, defender.status_layer("toxin")])
 			# 瑞普〖开膛手〗：普攻对其他玩家造成伤害后，延迟询问是否掠夺其手牌扣置为【陪葬品】
 			if _has_skill(src_p, "skill_ripper") and String(d.get("card_id", "")) == "basic_attack":
 				_ripper_pending.append({"source": int(d["source"]), "defender": int(d["defender"])})
@@ -2608,6 +2690,9 @@ const SKILL_SPECIAL_HANDLERS := {
 	"skill_leap_transition": "_skill_leap_transition",
 	"skill_rhythm_retrace": "_skill_rhythm_retrace",
 	"skill_exile_retrace": "_skill_exile_retrace_block",
+	"skill_boost": "_skill_boost",
+	"skill_truth": "_skill_truth",
+	"skill_destroy": "_skill_destroy",
 }
 
 # 技能选牌处理：pending kind -> 处理函数
@@ -2637,6 +2722,9 @@ const SKILL_PICK_HANDLERS := {
 	PENDING_REORDER_OWN: "_pick_reorder_own",
 	PENDING_REORDER_HAND: "_pick_reorder_hand",
 	PENDING_EVENT_CHOICE: "_pick_event_choice",
+	PENDING_BOOST_DISCARD: "_pick_boost_discard",
+	PENDING_TRUTH_DISCARD: "_pick_truth_discard",
+	PENDING_WEAPON_ASK: "_pick_weapon_ask",
 	"judge_prompt": "_pick_judge_prompt",
 }
 
@@ -3344,6 +3432,110 @@ func _pick_shackle_ask(_p: PlayerData, _skill_id: String, token: String) -> void
 	mode = Mode.PLAY
 	_process_damage_queue()
 
+# PM10〔增压〕：弃一张手牌，额外触发一次〔气体交换〕切换
+func _skill_boost(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	if p.hand.is_empty():
+		_log("你没有手牌可弃，〔增压〕发动失败。")
+		return true
+	if not p.has_status("intake") and not p.has_status("exhaust"):
+		_log("你没有「进气」或「排气」，〔增压〕发动失败。")
+		return true
+	var opts: Array[String] = []
+	for i in p.hand.size():
+		opts.append("hand:%d" % i)
+	_set_pending(PENDING_BOOST_DISCARD, {"skill_id": skill_id, "options": opts})
+	mode = Mode.SKILL_PICK
+	_log("〔增压〕：请选择一张手牌弃置。")
+	return true
+
+# PM10〔增压〕：弃牌后执行切换；切为「进气」则我方全体额外 +2 护盾，切为「排气」则摸一张牌
+func _pick_boost_discard(p: PlayerData, skill_id: String, token: String) -> void:
+	if not token.begins_with("hand:"):
+		return
+	var idx := int(token.split(":")[1])
+	if idx < 0 or idx >= p.hand.size():
+		return
+	var cid := p.hand[idx]
+	p.hand.remove_at(idx)
+	_to_discard(cid)
+	p.own_turn_discards.append(cid)
+	p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
+	pending = {}
+	mode = Mode.PLAY
+	_log("%s 发动〔增压〕：弃掉 %s，额外触发一次〔气体交换〕。" % [p.name, String(db.get_card(cid).get("name", cid))])
+	var state := _gas_exchange(p)
+	if state == "intake":
+		for pl in players:
+			if not pl.dead and pl.team_id == p.team_id:
+				pl.shield += 2
+		_log("〔增压〕：切换为「进气」，我方全体额外获得 2 点护盾。")
+	elif state == "exhaust":
+		_draw_cards(p, 1)
+		_log("〔增压〕：切换为「排气」，%s 摸一张牌。" % p.name)
+
+# 狄斯托利〔我即真理〕：弃一张手牌获得一层「烈性炸药」
+func _skill_truth(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	if p.hand.is_empty():
+		_log("你没有手牌可弃，〔我即真理〕发动失败。")
+		return true
+	var opts: Array[String] = []
+	for i in p.hand.size():
+		opts.append("hand:%d" % i)
+	_set_pending(PENDING_TRUTH_DISCARD, {"skill_id": skill_id, "options": opts})
+	mode = Mode.SKILL_PICK
+	_log("〔我即真理〕：请选择一张手牌弃置。")
+	return true
+
+func _pick_truth_discard(p: PlayerData, skill_id: String, token: String) -> void:
+	if not token.begins_with("hand:"):
+		return
+	var idx := int(token.split(":")[1])
+	if idx < 0 or idx >= p.hand.size():
+		return
+	var cid := p.hand[idx]
+	p.hand.remove_at(idx)
+	_to_discard(cid)
+	p.own_turn_discards.append(cid)
+	p.skill_uses_left[skill_id] = int(p.skill_uses_left.get(skill_id, 1)) - 1
+	_add_status_capped(p, "explosive", 1, -1)
+	pending = {}
+	mode = Mode.PLAY
+	_log("%s 发动〔我即真理〕：弃掉 %s，获得一层「烈性炸药」（共 %d 层）。" % [p.name, String(db.get_card(cid).get("name", cid)), p.status_layer("explosive")])
+
+# 狄斯托利〔我即武器〕：觉醒询问——弃掉所有手牌，将「烈性炸药」转化为等量「高爆炸药」并解锁〔毁灭当量〕
+func _pick_weapon_ask(p: PlayerData, _skill_id: String, token: String) -> void:
+	pending = {}
+	mode = Mode.PLAY
+	if token == "yes" and p.status_layer("explosive") >= 5:
+		var layers := p.status_layer("explosive")
+		var n := p.hand.size()
+		for cid in p.hand:
+			_to_discard(cid)
+			p.own_turn_discards.append(cid)
+		p.hand.clear()
+		p.remove_status("explosive")
+		p.add_status("high_explosive", -1, layers)
+		p.weapon_awakened = true
+		if not p.skill_ids.has("skill_destroy"):
+			p.skill_ids.append("skill_destroy")
+		_log("%s 触发〔我即武器〕觉醒！弃掉 %d 张手牌，%d 层「烈性炸药」转化为「高爆炸药」，解锁〔毁灭当量〕。" % [p.name, n, layers])
+	else:
+		_log("%s 暂不转化（当前 %d 层「烈性炸药」）。" % [p.name, p.status_layer("explosive")])
+	_run_deferred_prompts()
+
+# 狄斯托利〔毁灭当量〕：限定技，需觉醒后解锁；选一名其他玩家造成 5 点灵魂伤害 + X+2Y 点物理伤害
+func _skill_destroy(p: PlayerData, _skill: Dictionary, skill_id: String) -> bool:
+	if not p.weapon_awakened:
+		_log("〔毁灭当量〕需觉醒〔我即武器〕后才能发动。")
+		return true
+	if _target_candidates("single_enemy", "").is_empty():
+		_log("没有合法目标，〔毁灭当量〕发动失败。")
+		return true
+	_set_pending(PENDING_DESTROY_TARGET, {"source": current, "skill_id": skill_id, "target_type": "single_enemy"})
+	mode = Mode.SELECT_TARGET
+	_log("〔毁灭当量〕：请选择一名其他玩家。")
+	return true
+
 # 溯〖放逐〗：进入濒死时询问是否发动
 func _pick_exile_rt_ask(_p: PlayerData, _skill_id: String, token: String) -> void:
 	var dying_idx := int(pending.get("dying", current))
@@ -3718,6 +3910,22 @@ func _check_noise_on_turn_start(p: PlayerData) -> void:
 		_draw_cards(p, skip_count)
 		_log("%s 摸了 %d 张牌（等量替代）。" % [p.name, skip_count])
 
+# PM10〔气体交换〕：切换「进气」/「排气」并触发对应效果，返回切换后的形态（""=未切换）
+func _gas_exchange(p: PlayerData) -> String:
+	if p.has_status("intake"):
+		p.remove_status("intake")
+		p.add_status("exhaust", -1, 1)
+		_add_status_capped(p, "excitement", 1, -1)
+		_log("%s 触发〔气体交换〕：「进气」→「排气」，获得一层「兴奋」（共 %d 层）。" % [p.name, p.status_layer("excitement")])
+		return "exhaust"
+	if p.has_status("exhaust"):
+		p.remove_status("exhaust")
+		p.add_status("intake", -1, 1)
+		p.shield += 2
+		_log("%s 触发〔气体交换〕：「排气」→「进气」，获得 2 点护盾（现有 %d 点）。" % [p.name, p.shield])
+		return "intake"
+	return ""
+
 # 〖星辉〗觉醒：每回合开始检查 HP≤6
 func _check_star_brilliance(p: PlayerData) -> void:
 	if not _has_skill(p, "skill_star_brilliance"):
@@ -3770,6 +3978,10 @@ func ui_cancel_skill_pick() -> void:
 		return
 	if kind == PENDING_SCAB_EAT:
 		_pick_scab_eat(players[current], "", "no")
+		return
+	if kind == PENDING_WEAPON_ASK:
+		# 取消视为暂不转化，下个出牌阶段开始可再次询问
+		_pick_weapon_ask(players[current], "", "no")
 		return
 	if kind == PENDING_EXILE_RT_ASK:
 		var dying_rt := int(pending.get("dying", current))
