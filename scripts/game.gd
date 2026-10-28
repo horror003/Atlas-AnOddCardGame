@@ -106,6 +106,7 @@ var first_turn: bool = true
 var draw_pile: Array[String] = []     # 抽牌堆（全场共用，规则 3.1）
 var discard_pile: Array[String] = []  # 弃牌堆（全场共用）
 var event_deck: Array[String] = []    # 特殊事件牌堆（独立，规则 3.3）
+var recent_events: Array[String] = [] # 最近触发的特殊事件 id（侧栏「战场事件」展示，最新在末位，至多 3 条）
 
 var turn_discards: Array[String] = []      # 本回合进入弃牌堆的牌
 var last_turn_discards: Array[String] = [] # 上一回合进入弃牌堆的牌（信息公开，规则 6.1）
@@ -225,6 +226,7 @@ func start_game(board_id: String = "", new_pool_id: String = "classic") -> void:
 	_ripper_pending.clear()
 	_reorder_pending.clear()
 	_exile_done.clear()
+	recent_events.clear()
 	_log("—— 选人阶段：%s（%d 人）· 板子：%s ——" % [String(board.get("name", "对局")), board_player_count(), db.pool_name(pool_id)])
 	_log("请 玩家1 选择角色。")
 
@@ -3772,6 +3774,9 @@ func _trigger_event(src_idx: int) -> void:
 		_log("特殊事件牌堆已重新洗牌。")
 	var event_id: String = event_deck.pop_back()
 	var event := db.get_event(event_id)
+	recent_events.append(event_id)
+	while recent_events.size() > 3:
+		recent_events.pop_front()
 	_log("%s 触发特殊事件：%s —— %s" % [players[src_idx].name, String(event.get("name", "")), String(event.get("description", ""))])
 	# 先显示事件说明窗口，确认后再执行
 	_set_pending(PENDING_EVENT_SHOW, {"event_id": event_id, "source": src_idx})

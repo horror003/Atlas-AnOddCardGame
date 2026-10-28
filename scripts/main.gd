@@ -179,6 +179,8 @@ var game_over_layer: Control
 var game_over_label: Label
 var event_show_layer: Control
 var event_show_label: Label
+var event_bar: VBoxContainer             # 侧栏「战场事件」列表
+var _status_expand: Dictionary = {}      # 玩家下标 -> 状态栏是否展开（默认收起）
 var info_popup: Control
 var info_popup_title: Label
 var info_popup_desc: Label
@@ -344,6 +346,21 @@ func _build_ui() -> void:
 	prompt_label = Label.new()
 	prompt_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	prompt_panel.add_child(prompt_label)
+	# 战场事件栏：最近触发的特殊事件，点击查看事件全文
+	side.add_child(HSeparator.new())
+	var event_title := Label.new()
+	event_title.text = "战场事件"
+	event_title.add_theme_color_override("font_color", UITheme.ACCENT)
+	event_title.add_theme_font_size_override("font_size", UITheme.fs(13))
+	side.add_child(event_title)
+	event_bar = VBoxContainer.new()
+	event_bar.add_theme_constant_override("separation", 3)
+	side.add_child(event_bar)
+	var event_empty0 := Label.new()
+	event_empty0.text = "（尚未触发事件）"
+	event_empty0.add_theme_font_size_override("font_size", UITheme.fs(11))
+	event_empty0.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	event_bar.add_child(event_empty0)
 	# 上一回合弃牌信息放在最下方，内容超长时可由侧栏独立滚动查看
 	side.add_child(HSeparator.new())
 	discard_info_label = Label.new()
@@ -585,6 +602,7 @@ func _rebuild_player_panels(count: int) -> void:
 	player_labels.clear()
 	player_skill_rows.clear()
 	player_info_rows.clear()
+	_status_expand.clear()
 	players_bar.columns = 2 if count <= 2 or count == 4 else 3
 	var panel_h := _panel_h(count >= 4)
 	for i in count:
@@ -658,6 +676,26 @@ func _refresh() -> void:
 		discard_info_label.text = "上回合弃牌：无"
 	else:
 		discard_info_label.text = "上回合弃牌：%s" % "、".join(last_names)
+	# 战场事件栏：最近触发的事件（最新在前），点击显示事件全文
+	for c in event_bar.get_children():
+		c.queue_free()
+	if g.recent_events.is_empty():
+		var empty_l := Label.new()
+		empty_l.text = "（尚未触发事件）"
+		empty_l.add_theme_font_size_override("font_size", UITheme.fs(11))
+		empty_l.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+		event_bar.add_child(empty_l)
+	else:
+		for k in range(g.recent_events.size() - 1, -1, -1):
+			var ev := g.db.get_event(g.recent_events[k])
+			var ev_name := String(ev.get("name", "?"))
+			var ev_desc := String(ev.get("description", ""))
+			var eb := Button.new()
+			eb.text = ev_name
+			eb.add_theme_font_size_override("font_size", UITheme.fs(12))
+			eb.tooltip_text = ev_desc
+			eb.pressed.connect(func(): _show_info(ev_name, ev_desc))
+			event_bar.add_child(eb)
 
 	# 玩家面板：生命/状态/预备区/陷阱（规则 3.4 / 6.1）
 	for i in g.players.size():
@@ -685,8 +723,15 @@ func _refresh() -> void:
 		if p.dead:
 			st_parts.append("[url=dead]「死亡」[/url]")
 		if not st_parts.is_empty():
+			# 状态过多时折叠：仅显示前 2 条 + 展开链接，点击展开/收起全部
+			var shown := st_parts
+			if st_parts.size() > 4 and not bool(_status_expand.get(i, false)):
+				shown = st_parts.slice(0, 2)
+				shown.append("[url=stmore:%d]…等%d项▾[/url]" % [i, st_parts.size()])
+			elif st_parts.size() > 4:
+				shown.append("[url=stless:%d]收起▴[/url]" % i)
 			var st_joined := ""
-			for part in st_parts:
+			for part in shown:
 				if st_joined != "":
 					st_joined += " "
 				st_joined += part
@@ -1558,6 +1603,11 @@ func _show_info(title: String, desc: String) -> void:
 # 玩家面板富文本词条点击：状态 / 痂 / 濒死 / 死亡 / 预备区卡牌
 func _on_player_meta(meta: String) -> void:
 	_meta_click_frame = Engine.get_process_frames()
+	if meta.begins_with("stmore:") or meta.begins_with("stless:"):
+		var idx := int(meta.split(":")[1])
+		_status_expand[idx] = meta.begins_with("stmore:")
+		_refresh()
+		return
 	if meta.begins_with("st:"):
 		var sid := meta.substr(3)
 		_show_info(_status_display_name(sid), _status_desc(sid))
